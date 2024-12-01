@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.26)
-project(fs)
+project(fmt)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Debug)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -12,5 +12,5 @@ FetchContent_Declare(
   GIT_TAG        e69e5f977d458f2650bb346dadf2ad30c5320281) # 10.2.1
 FetchContent_MakeAvailable(fmt)
 
-add_executable(fs fs.cc)
-target_link_libraries(fs fmt::fmt)
+add_executable(hello fmt.cc)
+target_link_libraries(hello fmt::fmt)

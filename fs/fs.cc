@@ -1,19 +1,28 @@
 #include <sstream>
 #include <iostream>
 #include <stdint.h>
+#include <fmt/format.h>
 
-class IP;
-std::istream& operator >> (std::istream& is, IP &ip);
+class IPAddress;
+std::istream& operator >> (std::istream& is, IPAddress &ip);
 
-class IP {
+class IPAddress {
 public:
     uint32_t ip;
-    IP() : ip(0) {}
-    friend std::istream& operator >> (std::istream& is, IP &ip);
+    IPAddress() : ip(0) {}
+    friend std::istream& operator >> (std::istream& is, IPAddress &ip);
+
+    std::string toString() {
+        return fmt::format("{}.{}.{}.{}",
+                            (ip & 0xff000000) >> 24,
+                            (ip & 0x00ff0000) >> 16,
+                            (ip & 0x0000ff00) >> 8,
+                            (ip & 0x000000ff) >> 0);
+    }
 };
 
 
-std::istream& operator >> (std::istream& is, IP &ip)
+std::istream& operator >> (std::istream& is, IPAddress &ip)
 {
     std::istream::sentry s(is, true);
     if (s) {
@@ -53,10 +62,10 @@ std::istream& operator >> (std::istream& is, IP &ip)
 }
 
 int main() {
-    std::stringstream ss("   192.168.0.1   xx.168.0.3    10.0.0.3");
-    IP ip1;
-    IP ip2;
+    std::stringstream ss("   192.168.0.1   192.168.0.3    10.0.0.3");
+    IPAddress ip1;
+    IPAddress ip2;
     ss >> ip1 >> ip2;
-    std::cout << std::hex << ip1.ip <<  " " << ip2.ip << std::endl;
+    fmt::print("{} {}\n", ip1.toString(), ip2.toString());
     return 0;
 }
