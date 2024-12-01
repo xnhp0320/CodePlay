@@ -1,4 +1,5 @@
 #include <IntrusiveList.h>
+#include <iostream>
 
 class Foo {
 public:
@@ -35,6 +36,12 @@ int main() {
         Bar b{1};
         bar1list.push_back(b);
         bar2list.push_back(b);
+
+        for (auto it = bar1list.begin();
+                it != bar1list.end();
+                ++it) {
+            std::cout << it->i << std::endl;
+        }
 
         b.hook1.unlink();
     }
