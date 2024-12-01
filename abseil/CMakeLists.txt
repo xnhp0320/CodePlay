@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE ReleaseWithDebug)
 
 
-add_subdirectory(abseil-cpp)
+set(CMAKE_PREFIX_PATH "abseil-cpp/install")
+find_package(absl REQUIRED)
+
 add_executable(abseil abseil.cc)
-target_link_libraries(abseil absl::log absl::log_initialize absl::strings)
+target_link_libraries(abseil absl::log absl::log_initialize)

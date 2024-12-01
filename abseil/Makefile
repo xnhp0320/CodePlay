@@ -1,5 +1,5 @@
 .PONY: all
 
 all:
-	cmake -B build
-	make -C build -j
+	cmake -B build 
+	cmake --build build --target abseil -j 

@@ -3,3 +3,4 @@ fs/build
 fmt/build
 */build
 */*.log
+*/install
