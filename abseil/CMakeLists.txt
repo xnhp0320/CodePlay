@@ -3,7 +3,7 @@ project(abseil)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE ReleaseWithDebug)
 
 
 add_subdirectory(abseil-cpp)
