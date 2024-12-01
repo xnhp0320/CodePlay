@@ -12,5 +12,7 @@ FetchContent_Declare(
   GIT_TAG        e69e5f977d458f2650bb346dadf2ad30c5320281) # 10.2.1
 FetchContent_MakeAvailable(fmt)
 
+#add_subdirectory(abseil-cpp)
+
 add_executable(fs fs.cc)
 target_link_libraries(fs fmt::fmt)

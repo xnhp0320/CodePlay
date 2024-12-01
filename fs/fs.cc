@@ -2,6 +2,7 @@
 #include <iostream>
 #include <stdint.h>
 #include <fmt/format.h>
+#include <limits>
 
 class IPAddress;
 std::istream& operator >> (std::istream& is, IPAddress &ip);
@@ -19,6 +20,12 @@ public:
                             (ip & 0x0000ff00) >> 8,
                             (ip & 0x000000ff) >> 0);
     }
+
+    void fromString(const std::string& str) {
+        std::stringstream ss(str);
+        ss >> *this;
+    }
+
 };
 
 
@@ -31,6 +38,10 @@ std::istream& operator >> (std::istream& is, IPAddress &ip)
 
         int oct;
         if (is >> oct) {
+            if (oct < 0 || oct > std::numeric_limits<uint8_t>::max()) {
+                is.setstate(std::istream::failbit);
+                return is;
+            }
             v = (v << 8) | oct;
         } else {
             is.setstate(std::istream::failbit);
@@ -47,8 +58,12 @@ std::istream& operator >> (std::istream& is, IPAddress &ip)
             }
             //cannot use uint8_t, as uint8_t is a char.
             //it will only read a char, not a int.
-            
+
             if (is >> oct) {
+                if (oct < 0 || oct > std::numeric_limits<uint8_t>::max()) {
+                    is.setstate(std::istream::failbit);
+                    return is;
+                }
                 v = (v << 8) | oct;
             } else {
                 is.setstate(std::istream::failbit);
@@ -65,7 +80,11 @@ int main() {
     std::stringstream ss("   192.168.0.1   192.168.0.3    10.0.0.3");
     IPAddress ip1;
     IPAddress ip2;
+    IPAddress ip3;
+
     ss >> ip1 >> ip2;
-    fmt::print("{} {}\n", ip1.toString(), ip2.toString());
+    ip3.fromString("10.0.0.3");
+
+    fmt::print("{} {} {}\n", ip1.toString(), ip2.toString(), ip3.toString());
     return 0;
 }
