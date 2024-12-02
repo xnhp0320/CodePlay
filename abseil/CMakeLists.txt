@@ -10,4 +10,4 @@ set(CMAKE_PREFIX_PATH "abseil-cpp/install")
 find_package(absl REQUIRED)
 
 add_executable(abseil abseil.cc)
-target_link_libraries(abseil absl::log absl::log_initialize)
+target_link_libraries(abseil absl::log absl::log_initialize absl::flags absl::flags_parse)

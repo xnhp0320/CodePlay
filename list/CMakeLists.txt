@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.26)
+cmake_policy(SET CMP0167 OLD)
 find_package(Boost 1.86)
+set(CMAKE_CXX_COMPILER "clang++")
+set(CMAKE_C_COMPILER "clang")
+
 project(list)
 
 set(CMAKE_CXX_STANDARD 17)
