@@ -4,6 +4,7 @@ project(abseil)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE ReleaseWithDebug)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
 set(CMAKE_PREFIX_PATH "abseil-cpp/install")
