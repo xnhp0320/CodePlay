@@ -14,6 +14,17 @@ template < typename T>
 class copy_ptr {
 public:
     copy_ptr() : _ptr(nullptr) {}
+
+    // do not use new T{} as {} will translated into std::intializer_list
+    // when T is std::vector<JsonValue>, then the std::vector<JsonValue> { std::vector<JsonValue> }
+    // will try to make a list of list JsonValue, treating std::vector<JsonValue>
+    // as a JsonValue.
+    // this will create stack overflow as it create some sort of recursive ctor that never ends.
+    // same as copy_ptr(T&&/const T&/T*)
+    //
+    // It seems that if we use std::initializer_list to construct JsonMap/JsonList, which is a
+    // pure std::variant. It will call copy constructor instead of move. Even I use pure rvalue,
+    // like JsonList l = {JsonList{1,2,3}}.
     copy_ptr(const copy_ptr &other) {
         _ptr = new T(*other._ptr);
     }
@@ -24,11 +35,6 @@ public:
     // this is not a universal reference, its T comes from
     // the class template not the function temaplate.
     //
-    // do not use new T{} as {} will translated into std::intializer_list
-    // when T is std::vector<JsonValue>, then the std::vector<JsonValue> { std::vector<JsonValue> }
-    // will try to make a list of list JsonValue, treating std::vector<JsonValue>
-    // as a JsonValue.
-    // this will create stack overflow as it create some sort of recursive ctor that never ends.
     copy_ptr(const T&t) : _ptr(new T(t)) {}
     copy_ptr(T &&t) : _ptr(new T(std::move(t))) {}
     copy_ptr(T* ptr) : _ptr(new T(*ptr)) {}
@@ -161,8 +167,10 @@ int main () {
     //it's better to have a wrapper JsonKey class like JsonValue, wrapping
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
+    
     JsonValue m = JsonMap{{1u,2}, {3u,4}};
-    JsonMap m2 = {{1u, m}};
+    JsonMap m2 = {{1u, JsonList{1,2}}};
+    JsonList v6 = {JsonList{1,2,3}, JsonList{2,3,4}};
 
     JsonValue m3 = JsonMap{{1u, m}, {2u, JsonList{1,2}}};
 
