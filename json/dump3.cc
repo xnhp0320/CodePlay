@@ -2,7 +2,7 @@
 #include <vector>
 #include <unordered_map>
 #include <variant>
-//too complex. but eventually I handle it.
+//too complex.
 
 class JsonValue;
 
@@ -15,7 +15,7 @@ class copy_ptr {
 public:
     copy_ptr() : _ptr(nullptr) {}
     copy_ptr(const copy_ptr &other) {
-        _ptr = new T{*other._ptr};
+        _ptr = new T(*other._ptr);
     }
     copy_ptr(copy_ptr &&other) {
         _ptr = other._ptr;
@@ -29,9 +29,12 @@ public:
     // will try to make a list of list JsonValue, treating std::vector<JsonValue>
     // as a JsonValue.
     // this will create stack overflow as it create some sort of recursive ctor that never ends.
+    copy_ptr(const T&t) : _ptr(new T(t)) {}
     copy_ptr(T &&t) : _ptr(new T(std::move(t))) {}
-    copy_ptr(const T &t) : _ptr(new T(t)) {}
     copy_ptr(T* ptr) : _ptr(new T(*ptr)) {}
+
+    //template<typename T>
+    //copy_ptr(std::initializer_list<T> l) : _ptr(new T(l)) {}
 
     const T& operator*() const {
         return *_ptr;
@@ -146,8 +149,9 @@ int main () {
     copy_ptr<std::vector<int>> v1;
     v1 = v;
 
-    JsonList v2 = {1,2,3};
+    JsonList v2 = {"a","b","c"};
     JsonValue v4 = JsonList{1,2,3};
+    JsonValue v5 = v2;
 
     //we cannot use {1,2} as it's deduced as int.
     //template deduction does not support implicit coversion.
@@ -158,7 +162,11 @@ int main () {
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
     JsonValue m = JsonMap{{1u,2}, {3u,4}};
+
+    JsonValue m3 = JsonMap{{1u, m}, {2u, JsonList{1,2}}};
+
     std::cout << v4 << std::endl;
     std::cout << m << std::endl;
+    std::cout << m3 << std::endl;
     return 0;
 }
