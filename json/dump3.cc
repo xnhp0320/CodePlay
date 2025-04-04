@@ -25,10 +25,10 @@ public:
     // the class template not the function temaplate.
     //
     // do not use new T{} as {} will translated into std::intializer_list
-    // when T is std::vector<JsonValue>, then the T { std::vector<JsonValue> }
+    // when T is std::vector<JsonValue>, then the std::vector<JsonValue> { std::vector<JsonValue> }
     // will try to make a list of list JsonValue, treating std::vector<JsonValue>
     // as a JsonValue.
-    // this will create stack overflow as it create some sort of recursive.
+    // this will create stack overflow as it create some sort of recursive ctor that never ends.
     copy_ptr(T &&t) : _ptr(new T(std::move(t))) {}
     copy_ptr(const T &t) : _ptr(new T(t)) {}
     copy_ptr(T* ptr) : _ptr(new T(*ptr)) {}
