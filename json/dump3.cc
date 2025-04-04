@@ -162,11 +162,13 @@ int main () {
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
     JsonValue m = JsonMap{{1u,2}, {3u,4}};
+    JsonMap m2 = {{1u, m}};
 
     JsonValue m3 = JsonMap{{1u, m}, {2u, JsonList{1,2}}};
 
     std::cout << v4 << std::endl;
     std::cout << m << std::endl;
+    std::cout << m2 << std::endl;
     std::cout << m3 << std::endl;
     return 0;
 }
