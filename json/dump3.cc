@@ -21,15 +21,14 @@ public:
         _ptr = other._ptr;
         other._ptr = nullptr;
     }
-
-    //do not use Args&&, since you will overload
-    //a && ctor with the original one, which is
-    //dangous. We anyway will copy the args into
-    //the T.
-    template<typename ...Args>
-    copy_ptr(Args... args) : _ptr(new T{std::move(args)...}) {}
-
+    // this is not a universal reference, its T comes from
+    // the class template not the function temaplate.
+    copy_ptr(T &&t) : _ptr(new T{std::move(t)}) {}
+    copy_ptr(const T &t) : _ptr(new T{t}) {}
     copy_ptr(T* ptr) : _ptr(new T{*ptr}) {}
+
+    template <typename Arg>
+    copy_ptr(std::initializer_list<Arg> l) : _ptr(new T{l}) {}
 
     T& operator*() {
         return *_ptr;
@@ -68,19 +67,23 @@ public:
 
     JsonValue(std::initializer_list<JsonValue> l) : _v(JsonListPtr(JsonList(l))) {}
 
-    using value_type = JsonMap::value_type;
-
-    JsonValue(std::initializer_list<value_type> l) : _v(JsonMapPtr(l)) {}
+    //there is ambiguous
+    //{{1,2}, {3,4}} could be either a list of list,
+    //or a map. so it's just too hard to do the initialize.
 };
 
 int main () {
-    //std::vector<int> v = {12,3};
-    //copy_ptr<std::vector<int>> v3 = v;
-    //copy_ptr<std::vector<int>> v1;
-    //v1 = v;
+    std::vector<int> v = {12,3};
+    copy_ptr<std::vector<int>> v3 = v;
+    copy_ptr<std::vector<int>> v1;
+    v1 = v;
 
     JsonList v2 = {1,2,3};
     JsonValue v4 = {1,2,3};
-    JsonValue m = {{1,2}, {3,4}};
+    //we cannot use {1,2} as it's deduced as int.
+    //template deduction does not support implicit coversion.
+    //however, JsonValue suport == 1, as normal ctor support
+    //int -> uint64.
+    JsonMap m = {{1u,2}, {3u,4}};
     return 0;
 }
