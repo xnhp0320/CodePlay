@@ -24,7 +24,8 @@ public:
     //
     // It seems that if we use std::initializer_list to construct JsonMap/JsonList, which is a
     // pure std::variant. It will call copy constructor instead of move. Even I use pure rvalue,
-    // like JsonList l = {JsonList{1,2,3}}.
+    // like JsonList l = {JsonList{1,2,3}}. This should blame initializer_list, check
+    // template/S.cc to see.
     copy_ptr(const copy_ptr &other) {
         _ptr = new T(*other._ptr);
     }
@@ -79,6 +80,8 @@ struct JsonValue {
     JsonValueType _v;
 
     JsonValue() = default;
+    JsonValue(const JsonValue &other) = default;
+    JsonValue(JsonValue &&other) = default;
 
     JsonValue(std::string v) : _v(std::move(v)) {}
     JsonValue(const char* v) : _v(std::string(v)) {}
