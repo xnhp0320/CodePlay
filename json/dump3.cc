@@ -2,7 +2,7 @@
 #include <vector>
 #include <unordered_map>
 #include <variant>
-//too complex.
+//too complex. but eventually I handle it.
 
 class JsonValue;
 
@@ -33,10 +33,11 @@ public:
     copy_ptr(const T &t) : _ptr(new T(t)) {}
     copy_ptr(T* ptr) : _ptr(new T(*ptr)) {}
 
-    template <typename Arg>
-    copy_ptr(std::initializer_list<Arg> l) : _ptr(new T(l)) {}
-
     const T& operator*() const {
+        return *_ptr;
+    }
+
+    T& operator*() {
         return *_ptr;
     }
 
