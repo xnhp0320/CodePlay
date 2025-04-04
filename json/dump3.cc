@@ -62,14 +62,14 @@ public:
     JsonValue(std::string v) : _v(v) {}
     JsonValue(const char* v) : _v(std::string(v)) {}
     JsonValue(uint64_t v) : _v(v) {}
-    JsonValue(JsonListPtr v) : _v(v) {}
-    JsonValue(JsonMapPtr v) : _v(v) {}
-
-    JsonValue(std::initializer_list<JsonValue> l) : _v(JsonListPtr(JsonList(l))) {}
+    JsonValue(JsonList v) : _v(JsonListPtr(v)) {}
+    JsonValue(JsonMap v) : _v(JsonMapPtr(v)) {}
 
     //there is ambiguous
     //{{1,2}, {3,4}} could be either a list of list,
-    //or a map. so it's just too hard to do the initialize.
+    //or a map. so the best way is to explicit to
+    //initialize it, so do not provide std::initializer_list
+    //ctor.
 };
 
 int main () {
@@ -79,11 +79,16 @@ int main () {
     v1 = v;
 
     JsonList v2 = {1,2,3};
-    JsonValue v4 = {1,2,3};
+    JsonValue v4 = JsonList{1,2,3};
+
     //we cannot use {1,2} as it's deduced as int.
     //template deduction does not support implicit coversion.
     //however, JsonValue suport == 1, as normal ctor support
-    //int -> uint64.
-    JsonMap m = {{1u,2}, {3u,4}};
+    //implicit conversion(int -> uint64).
+    //so instead of using JsonMap = std::variant<uint64_t, std::string>
+    //
+    //it's better to have a wrapper JsonKey class like JsonValue, wrapping
+    //std::variant<uint64_t, std::string>
+    JsonValue m = JsonMap{{1u,2}, {3u,4}};
     return 0;
 }

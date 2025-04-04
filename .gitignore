@@ -5,3 +5,4 @@ fmt/build
 */*.log
 */install
 a.out
+*.dSYM/*
