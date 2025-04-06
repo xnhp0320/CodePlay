@@ -18,9 +18,15 @@ public:
     // do not use new T{} as {} will translated into std::intializer_list
     // when T is std::vector<JsonValue>, then the std::vector<JsonValue> { std::vector<JsonValue> }
     // will try to make a list of list JsonValue, treating std::vector<JsonValue>
-    // as a JsonValue.
     // this will create stack overflow as it create some sort of recursive ctor that never ends.
     // same as copy_ptr(T&&/const T&/T*)
+    //
+    // use a JsonList to construct a JsonValue: JsonValue(JsonList)
+    //  -> construct JsonList
+    //      -> construct JsonListPtr
+    //          -> use JsonList as an element of std::vector<JsonValue> ---> this is wrong!
+    //              -> use a JsonList cosntruct a JsonValue
+    //                  -> loops
     //
     // It seems that if we use std::initializer_list to construct JsonMap/JsonList, which is a
     // pure std::variant. It will call copy constructor instead of move. Even I use pure rvalue,
@@ -39,9 +45,6 @@ public:
     copy_ptr(const T&t) : _ptr(new T(t)) {}
     copy_ptr(T &&t) : _ptr(new T(std::move(t))) {}
     copy_ptr(T* ptr) : _ptr(new T(*ptr)) {}
-
-    //template<typename T>
-    //copy_ptr(std::initializer_list<T> l) : _ptr(new T(l)) {}
 
     const T& operator*() const {
         return *_ptr;
