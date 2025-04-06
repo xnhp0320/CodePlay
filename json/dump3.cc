@@ -5,10 +5,29 @@
 //too complex.
 
 class JsonValue;
+struct JsonKey {
+    std::variant<std::string, uint64_t> _v;
+    JsonKey() = default;
 
-using JsonKey = std::variant<std::string, uint64_t>;
+    JsonKey(uint64_t value) : _v(value) {}
+    JsonKey(std::string str) : _v(std::move(str)) {}
+    JsonKey(const char *str) : _v(std::string(str)) {}
+    bool operator==(const JsonKey &other) const {
+        return _v == other._v;
+    }
+};
+
+template <>
+struct std::hash<JsonKey> {
+    std::size_t operator()(const JsonKey &k) const {
+        return std::hash<std::variant<std::string, uint64_t>>()(k._v);
+    }
+};
+
+
 using JsonList = std::vector<JsonValue>;
 using JsonMap = std::unordered_map<JsonKey, JsonValue>;
+
 
 template < typename T>
 class copy_ptr {
@@ -134,10 +153,12 @@ std::ostream & operator << (std::ostream& os, const JsonList& l) {
 
 std::ostream & operator << (std::ostream& os, const JsonKey& k) {
 
-    if (std::holds_alternative<std::string>(k)) {
-        os << "\"" << std::get<0>(k) << "\"";
-    } else if (std::holds_alternative<uint64_t>(k)) {
-        os << std::get<1>(k);
+    const auto& v = k._v;
+
+    if (std::holds_alternative<std::string>(v)) {
+        os << "\"" << std::get<0>(v) << "\"";
+    } else if (std::holds_alternative<uint64_t>(v)) {
+        os << std::get<1>(v);
     }
     return os;
 }
@@ -170,15 +191,16 @@ int main () {
     //however, JsonValue suport v == 1, as normal ctor support
     //implicit conversion(int -> uint64).
     //so instead of using JsonKey = std::variant<uint64_t, std::string>
+    //
     //it's better to have a wrapper JsonKey class like JsonValue, wrapping
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
     
-    JsonValue m = JsonMap{{1u,2}, {3u,4}};
-    JsonMap m2 = {{1u, JsonList{1,2}}};
+    JsonValue m = JsonMap{{1,2}, {3,4}};
+    JsonMap m2 = {{1, JsonList{1,2}}};
     JsonList v6 = {JsonList{1,2,3}, JsonList{2,3,4}};
 
-    JsonValue m3 = JsonMap{{1u, m}, {2u, JsonList{1,2}}};
+    JsonValue m3 = JsonMap{{1, m}, {2, JsonList{1,2}}};
 
     std::cout << v4 << std::endl;
     std::cout << m << std::endl;
