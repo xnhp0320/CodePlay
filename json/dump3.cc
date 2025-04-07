@@ -190,8 +190,7 @@ int main () {
     //template deduction does not support implicit coversion.
     //however, JsonValue suport v == 1, as normal ctor support
     //implicit conversion(int -> uint64).
-    //so instead of using JsonKey = std::variant<uint64_t, std::string>
-    //
+    //so instead of using JsonKey = std::variant<uint64_t, std::string>,
     //it's better to have a wrapper JsonKey class like JsonValue, wrapping
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
