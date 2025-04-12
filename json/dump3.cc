@@ -2,6 +2,10 @@
 #include <vector>
 #include <unordered_map>
 #include <variant>
+#include <iomanip>
+
+#include <boost/iostreams/concepts.hpp>
+#include <boost/iostreams/filtering_stream.hpp>
 //too complex.
 
 class JsonValue;
@@ -73,6 +77,10 @@ public:
         return *_ptr;
     }
 
+    T* operator->() {
+        return _ptr;
+    }
+
     copy_ptr& operator=(copy_ptr other) {
         _ptr = other._ptr;
         other._ptr = nullptr;
@@ -123,6 +131,74 @@ struct JsonValue {
     //initialize it, so do not provide std::initializer_list
     //ctor.
 };
+
+void
+output(std::ostream &os, const JsonValue &v, size_t indent_depth);
+
+void
+output(std::ostream &os, const JsonMap &m, size_t indent_depth = 0) {
+    os << "{\n";
+    auto kv = m.cbegin();
+    os << std::setw(indent_depth) << kv->first << ":";
+    output(os, kv->second, indent_depth + 1);
+
+    for (++kv; kv != m.cend(); ++kv) {
+        os << ",\n" << std::setw(indent_depth) << kv->first << ":";
+        output(os, kv->second, indent_depth + 1);
+    }
+    os << "\n}";
+}
+
+void
+output(std::ostream &os, const JsonValue &v, size_t indent_depth = 0) {
+    auto const & _v = v._v;
+
+    if (std::holds_alternative<std::string>(_v)) {
+        os << "\"" << std::get<0>(_v) << "\"";
+    } else if (std::holds_alternative<uint64_t>(_v)) {
+        os << std::get<1>(_v);
+    } else if (std::holds_alternative<JsonListPtr>(_v)) {
+        os << *std::get<2>(_v);
+    } else {
+        output(os, *std::get<3>(_v), indent_depth + 1);
+    }
+}
+
+//try to write a pretty printer to add indent for Json Printer.
+//use a PrettyPrinter as a ostream which will change every "\n"
+//into a "\n" + "\t" * indent;
+//
+//A first idea is to use boost::iostreams Filters.
+//well, filter cannot follow the print levels,
+//so it's not a good choice.
+//
+//The second idea to use boost::iostreams Device,
+//to design a special out device for JsonValue.
+//which is still too complex, and it cannot be
+//implemented as it's hard to put state(indent_depth)
+//into the device(boost::iostream sink/source).
+
+namespace io = boost::iostreams;
+
+
+class IndentPrinter :  public io::output_filter {
+    size_t _indent;
+public:
+    IndentPrinter(size_t indent) : _indent(indent) {}
+    template<typename Sink>
+    bool put(Sink &dest, int c) {
+        if (c == '\n') {
+            io::put(dest, '\n');
+            for (size_t i = 0; i < _indent; ++i ) {
+                io::put(dest, '\t');
+            }
+        } else {
+            io::put(dest, c);
+        }
+        return true;
+    }
+};
+
 
 std::ostream & operator << (std::ostream& os, const JsonValue& value) {
     const auto& v = value._v;
@@ -194,16 +270,26 @@ int main () {
     //it's better to have a wrapper JsonKey class like JsonValue, wrapping
     //std::variant<uint64_t, std::string>, and provide a ctor accepting uint64_t
     //use C's implictly conversion to provide a little bit convinience.
-    
+
     JsonValue m = JsonMap{{1,2}, {3,4}};
     JsonMap m2 = {{1, JsonList{1,2}}};
     JsonList v6 = {JsonList{1,2,3}, JsonList{2,3,4}};
 
-    JsonValue m3 = JsonMap{{1, m}, {2, JsonList{1,2}}};
+    JsonValue m3 = JsonMap{{1, m}, {2, v5}};
 
-    std::cout << v4 << std::endl;
-    std::cout << m << std::endl;
-    std::cout << m2 << std::endl;
-    std::cout << m3 << std::endl;
+    //std::cout << v4 << std::endl;
+    //std::cout << m << std::endl;
+    //std::cout << m2 << std::endl;
+    //std::cout << m3 << std::endl;
+
+    //IndentPrinter p(1);
+    //io::filtering_ostream out;
+    //out.push(p);
+    //out.push(std::cout);
+
+    //out << m3 << std::endl;
+
+    output(std::cout , m3);
+
     return 0;
 }
