@@ -1,0 +1,8 @@
+edition = "2023";
+
+message oneofmessage {
+  oneof test_oneof {
+    string name = 1; 
+    int32  id = 2;
+  }
+}
