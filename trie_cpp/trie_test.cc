@@ -14,6 +14,13 @@ TEST(Prefix, Test1) {
     EXPECT_EQ(str, "0x1234/16");
 }
 
+TEST(Prefix, Test2) {
+    prefix<uint16_t> p1 = { 0x8000, 4 };
+    prefix<uint16_t> p2 = { 0x8000, 2 };
+    EXPECT_EQ(p2.overlap(p1), true);
+}
+
+
 TEST(Trie, Test1) {
     trie<uint32_t> bt;
     bt.insert<uint16_t>({0x1234, 16}, 1);

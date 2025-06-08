@@ -64,6 +64,10 @@ struct range {
     bool contains(const T v) const {
         return low <= v && high >= v;
     }
+
+    bool contains(const range<T>& other) const {
+        return low <= other.low && high >= other.high;
+    }
 };
 
 template <typename T>
@@ -72,11 +76,10 @@ struct prefix {
     uint8_t len;
 
     static_assert(std::is_unsigned_v<T>, "T must be unsigned");
-    static_assert(sizeof(T) <= 8, "T must equal or less than 8 bytes");
     prefix() = default;
 
     prefix(T v, uint8_t len) : v{v}, len{len} {
-        T mask = ~((1ULL << (sizeof(T) * 8 - len)) - 1);
+        T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
         if (v != (v & mask)) {
             throw std::runtime_error(fmt::format("prefix does not match the length {:x}/{}", v, len));
         }
@@ -95,12 +98,13 @@ struct prefix {
     }
 
     bool highest_bit_is_set() const {
-        return v & (1ULL << (sizeof(T) * 8 - 1));
+        return v & (T(1) << (sizeof(T) * 8 - 1));
     }
 
     range<T> covert_to_range() const {
-        T mask = ~((1ULL << (sizeof(T) * 8 - len)) - 1);
-        return {v & mask, v | ~mask};
+        T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
+        return {static_cast<T>(v & mask), 
+                static_cast<T>(v | ~mask)};
     }
     
     bool overlap(const prefix<T>& other) const {
