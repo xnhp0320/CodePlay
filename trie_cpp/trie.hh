@@ -117,6 +117,12 @@ struct prefix {
         auto range = covert_to_range();
         return range.contains(value);
     }
+
+    bool contains(const prefix<T>& other) const {
+        auto range = covert_to_range();
+        auto other_range = other.covert_to_range();
+        return range.contains(other_range);
+    }
 };
 
 

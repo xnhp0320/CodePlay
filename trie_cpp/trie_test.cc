@@ -18,6 +18,7 @@ TEST(Prefix, Test2) {
     prefix<uint16_t> p1 = { 0x8000, 4 };
     prefix<uint16_t> p2 = { 0x8000, 2 };
     EXPECT_EQ(p2.overlap(p1), true);
+    EXPECT_EQ(p2.contains(p1), true);
 }
 
 
