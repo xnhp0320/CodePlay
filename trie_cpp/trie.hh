@@ -58,7 +58,7 @@ struct range {
     static_assert(std::is_unsigned_v<T>, "T must be unsigned");
 
     bool overlap(const range<T>& other) const {
-        return low <= other.high && high >= other.low; 
+        return low <= other.high && high >= other.low;
     }
 
     bool contains(const T v) const {
@@ -103,10 +103,10 @@ struct prefix {
 
     range<T> covert_to_range() const {
         T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
-        return {static_cast<T>(v & mask), 
+        return {static_cast<T>(v & mask),
                 static_cast<T>(v | ~mask)};
     }
-    
+
     bool overlap(const prefix<T>& other) const {
         auto other_range = other.covert_to_range();
         auto this_range = covert_to_range();
@@ -163,7 +163,7 @@ public:
                 currNode = currNode->right.get();
             } else {
                 if (!currNode->left) {
-                    return std::nullopt; 
+                    return std::nullopt;
                 }
                 currNode = currNode->left.get();
             }
