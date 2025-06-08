@@ -98,7 +98,7 @@ struct range {
     }
 
     std::string show() const {
-        return fmt::format("0x{:0{}x}-0x{:0{}x}", low, sizeof(T) * 2, high, sizeof(T) * 2);
+        return fmt::format("{}-{}", low, high);
     }
 };
 
@@ -111,6 +111,14 @@ struct prefix {
     prefix() = default;
 
     prefix(T v, uint8_t len) : v{v}, len{len} {
+        if (len == 0) {
+            if (v != 0) {
+                throw std::invalid_argument(fmt::format("prefix does not match the length {:x}/{}", v, len));
+            } else {
+                return;
+            }
+        }
+
         T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
         if (v != (v & mask)) {
             throw std::invalid_argument(fmt::format("prefix does not match the length {:x}/{}", v, len));
