@@ -21,6 +21,20 @@ TEST(Prefix, Test2) {
     EXPECT_EQ(p2.contains(p1), true);
 }
 
+TEST(IPPrefix, Test1) {
+    ipv4_prefix p1 = { 0xc0a80000, 16 };
+    auto str = p1.show();
+    EXPECT_EQ(str, "192.168.0.0/16");
+}
+
+TEST(IPPrefix, Test2) {
+    EXPECT_THROW({ipv4_prefix p1 = "192.168.10000.0/16";}, std::invalid_argument);
+}
+
+TEST(ACL, Test1) {
+    acl_rule r = {"192.168.0.0/16", "0.0.0.0/0", "0-65535", "0-65535", "0-255"};
+}
+
 
 TEST(Trie, Test1) {
     trie<uint32_t> bt;

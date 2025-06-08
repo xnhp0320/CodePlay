@@ -5,6 +5,9 @@
 #include <fmt/format.h>
 #include <concepts>
 #include <vector>
+#include <absl/strings/str_split.h>
+#include <limits>
+#include <string_view>
 
 
 struct trie_node_base {
@@ -22,6 +25,8 @@ struct trie_node_base {
             return 1 + right->max_depth();
         }
     }
+
+    virtual ~trie_node_base() = default;
 };
 
 template <typename T>
@@ -56,6 +61,29 @@ struct range {
     T high;
 
     static_assert(std::is_unsigned_v<T>, "T must be unsigned");
+    range() = default;
+
+    range(const char *s) : range(std::string_view(s)) {}
+    range(T l, T h) : low{l}, high{h} {}
+
+    range(std::string_view s) {
+        std::vector<std::string_view> parts = absl::StrSplit(s, '-');
+        if (parts.size() != 2) {
+            throw std::invalid_argument(fmt::format("invalid range format {}", s));
+        }
+
+        auto v = std::stoul(std::string(parts[0]), nullptr, 10);
+        if (v < 0 || v > std::numeric_limits<T>::max()) {
+            throw std::invalid_argument(fmt::format("invalid range value {}", v));
+        }
+        low = v;
+
+        v = std::stoul(std::string(parts[1]), nullptr, 10);
+        if (v < 0 || v > std::numeric_limits<T>::max()) {
+            throw std::invalid_argument(fmt::format("invalid range value {}", v));
+        }
+        high = v;
+    }
 
     bool overlap(const range<T>& other) const {
         return low <= other.high && high >= other.low;
@@ -67,6 +95,10 @@ struct range {
 
     bool contains(const range<T>& other) const {
         return low <= other.low && high >= other.high;
+    }
+
+    std::string show() const {
+        return fmt::format("0x{:0{}x}-0x{:0{}x}", low, sizeof(T) * 2, high, sizeof(T) * 2);
     }
 };
 
@@ -81,11 +113,11 @@ struct prefix {
     prefix(T v, uint8_t len) : v{v}, len{len} {
         T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
         if (v != (v & mask)) {
-            throw std::runtime_error(fmt::format("prefix does not match the length {:x}/{}", v, len));
+            throw std::invalid_argument(fmt::format("prefix does not match the length {:x}/{}", v, len));
         }
 
         if (len > sizeof(T) * 8) {
-            throw std::runtime_error(fmt::format("prefix length is too long len {}", len));
+            throw std::invalid_argument(fmt::format("prefix length is too long len {}", len));
         }
     }
 
@@ -101,29 +133,94 @@ struct prefix {
         return v & (T(1) << (sizeof(T) * 8 - 1));
     }
 
-    range<T> covert_to_range() const {
+    range<T> convert_to_range() const {
         T mask = ~((T(1) << (sizeof(T) * 8 - len)) - 1);
         return {static_cast<T>(v & mask),
                 static_cast<T>(v | ~mask)};
     }
 
     bool overlap(const prefix<T>& other) const {
-        auto other_range = other.covert_to_range();
-        auto this_range = covert_to_range();
+        auto other_range = other.convert_to_range();
+        auto this_range = convert_to_range();
         return this_range.overlap(other_range);
     }
 
     bool match(const T value) const {
-        auto range = covert_to_range();
+        auto range = convert_to_range();
         return range.contains(value);
     }
 
     bool contains(const prefix<T>& other) const {
-        auto range = covert_to_range();
-        auto other_range = other.covert_to_range();
+        auto range = convert_to_range();
+        auto other_range = other.convert_to_range();
         return range.contains(other_range);
     }
 };
+
+
+struct ipv4_prefix : public prefix<uint32_t> {
+
+    ipv4_prefix() = default;
+    ipv4_prefix(uint32_t v, uint8_t len) : prefix<uint32_t>(v, len) {}
+
+    std::string show() const {
+        return fmt::format("{}.{}.{}.{}/{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, len);
+    }
+
+    ipv4_prefix(const char *s) : ipv4_prefix(std::string_view(s)) {}
+
+    ipv4_prefix(std::string_view s) {
+        std::vector<std::string_view> parts = absl::StrSplit(s, '/');
+        if (parts.size() != 2) {
+            throw std::invalid_argument(fmt::format("invalid ipv4 prefix {}", s));
+        }
+
+        const auto& ip = parts[0];
+        std::vector<std::string_view> ip_parts = absl::StrSplit(ip, '.');
+        if (ip_parts.size() != 4) {
+            throw std::invalid_argument(fmt::format("invalid ipv4 prefix {}", s));
+        }
+
+        uint32_t v = 0;
+        for (const auto& part : ip_parts) {
+            auto _v = std::stoul(std::string(part));
+            if (_v > 0xff) {
+                throw std::invalid_argument(fmt::format("invalid ipv4 octet {}", _v));
+            }
+            v = (v << 8) | _v;
+        }
+        uint8_t _len = std::stoul(std::string(parts[1]));
+        if (_len > 32) {
+            throw std::invalid_argument(fmt::format("invalid ipv4 prefix length {}", _len));
+        }
+        uint8_t len = _len;
+        *this = ipv4_prefix(v, len);
+    }
+
+};
+
+
+struct acl_rule {
+    using port_range = range<uint16_t>;
+    using proto_range = range<uint8_t>;
+
+    ipv4_prefix src;
+    ipv4_prefix dst;
+    port_range src_port;
+    port_range dst_port;
+    proto_range proto;
+
+    acl_rule() = default;
+
+    acl_rule(ipv4_prefix src, ipv4_prefix dst, port_range src_port, port_range dst_port, proto_range proto)
+        : src{src}, dst{dst}, src_port{src_port}, dst_port{dst_port}, proto{proto} {}
+
+
+    std::string show() const {
+        return fmt::format("{} {} {} {} {}", src.show(), dst.show(), src_port.show(), dst_port.show(), proto.show());
+    }
+};
+
 
 
 template <typename T>
