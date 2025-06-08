@@ -1,6 +1,7 @@
 #include "trie.hh"
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 
 TEST(Prefix, Test1) {
@@ -40,3 +41,17 @@ TEST(Trie, Test3) {
     EXPECT_EQ((bool)value, true);
     EXPECT_EQ(*value, 2);
 }
+
+TEST(Trie, Test4) {
+    trie<uint32_t> bt;
+    bt.insert<uint16_t>({0x1234, 16}, 1);
+    bt.insert<uint16_t>({0x4, 16}, 2);
+    std::vector<prefix<uint16_t>> prefixes;
+    bt.dump(prefixes);
+    EXPECT_EQ(prefixes.size(), 2);
+    EXPECT_THAT(prefixes, testing::UnorderedElementsAre(
+        prefix<uint16_t>{0x1234, 16},
+        prefix<uint16_t>{0x4, 16}
+    ));
+}
+

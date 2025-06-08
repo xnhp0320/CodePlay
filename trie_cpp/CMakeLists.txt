@@ -24,11 +24,12 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
-add_executable(trie_test trie_test.cc)
-target_compile_options(trie_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(trie_test PRIVATE -fsanitize=address)
-target_link_libraries(trie_test fmt::fmt GTest::gtest_main)
-
 include(GoogleTest)
+
+add_executable(trie_test trie_test.cc)
+target_compile_options(trie_test PRIVATE -fsanitize=address -fno-omit-frame-pointer -fsanitize=undefined)
+target_link_options(trie_test PRIVATE -fsanitize=address)
+target_link_libraries(trie_test fmt::fmt GTest::gtest_main gmock_main)
 gtest_discover_tests(trie_test)
+
 

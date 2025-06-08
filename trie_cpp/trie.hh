@@ -4,12 +4,14 @@
 #include <memory>
 #include <fmt/format.h>
 #include <concepts>
+#include <vector>
+
 
 struct trie_node_base {
     std::unique_ptr<trie_node_base> left;
     std::unique_ptr<trie_node_base> right;
 
-    size_t max_depth() {
+    size_t max_depth() const {
         if (!left && !right) {
             return 0;
         } else if (left && right) {
@@ -22,15 +24,29 @@ struct trie_node_base {
     }
 };
 
+template <typename T>
+constexpr auto init_value() {
+    if constexpr (std::is_unsigned_v<T> || std::is_signed_v<T>) {
+        return 0;
+    } else if (std::is_pointer_v<T>) {
+        return nullptr;
+    } else {
+        return T{};
+    }
+}
 
 template<typename T>
 struct trie_node : public trie_node_base {
 public:
     T value;
     trie_node(T v) : value{v} {}
-    trie_node() : value{0} {}
+    trie_node() : value{init_value<T>()} {}
     void set(T v) {
         value = v;
+    }
+
+    bool has_info() const {
+        return value != init_value<T>();
     }
 };
 
@@ -53,16 +69,25 @@ struct range {
 template <typename T>
 struct prefix {
     T v;
-    size_t len;
+    uint8_t len;
 
     static_assert(std::is_unsigned_v<T>, "T must be unsigned");
     static_assert(sizeof(T) <= 8, "T must equal or less than 8 bytes");
+    prefix() = default;
 
-    prefix(T v, size_t len) : v{v}, len{len} {
-        T mask = (1ULL << len) - 1;
+    prefix(T v, uint8_t len) : v{v}, len{len} {
+        T mask = ~((1ULL << (sizeof(T) * 8 - len)) - 1);
         if (v != (v & mask)) {
-            throw std::runtime_error("prefix does not match the length");
+            throw std::runtime_error(fmt::format("prefix does not match the length {:x}/{}", v, len));
         }
+
+        if (len > sizeof(T) * 8) {
+            throw std::runtime_error(fmt::format("prefix length is too long len {}", len));
+        }
+    }
+
+    bool operator==(const prefix<T>& other) const {
+        return v == other.v && len == other.len;
     }
 
     std::string show() const {
@@ -74,7 +99,7 @@ struct prefix {
     }
 
     range<T> covert_to_range() const {
-        T mask = (1ULL << len) - 1;
+        T mask = ~((1ULL << (sizeof(T) * 8 - len)) - 1);
         return {v & mask, v | ~mask};
     }
     
@@ -94,16 +119,13 @@ struct prefix {
 template <typename T>
 class trie {
 public:
-    std::unique_ptr<trie_node_base> root;
+    trie_node<T> root;
     trie() = default;
 
     template<typename P>
     void insert(prefix<P> p, T value) {
-        if (!root) {
-            root = std::make_unique<trie_node<T>>();
-        }
 
-        trie_node_base* currNode = root.get();
+        trie_node_base* currNode = &root;
         while (p.len) {
             if (p.highest_bit_is_set()) {
                 if (!currNode->right) {
@@ -126,11 +148,9 @@ public:
 
     template<typename P>
     std::optional<T> find(prefix<P> p) const {
-        if (!root) {
-            return std::nullopt; 
-        }
 
-        trie_node_base* currNode = root.get();
+        const trie_node_base* currNode = &root;
+
         while (p.len) {
             if (p.highest_bit_is_set()) {
                 if (!currNode->right) {
@@ -147,15 +167,33 @@ public:
             p.len--;
         }
 
-        trie_node<T> *tn = static_cast<trie_node<T>*>(currNode);
+        const trie_node<T> *tn = static_cast<const trie_node<T>*>(currNode);
         return tn->value;
     }
 
-    size_t max_depth() const {
-        if (!root) {
-            return 0;
+    template<typename P>
+    void dump(const trie_node_base* node, prefix<P> p, std::vector<prefix<P>>& prefixes) const {
+        if ((static_cast<const trie_node<T>*>(node))->has_info()) {
+            prefixes.push_back(p);
         }
-        return root->max_depth();
+
+        if (node->left) {
+            prefix<P> left_p = prefix<P>(p.v, p.len + 1);
+            dump(node->left.get(), left_p, prefixes);
+        }
+        if (node->right) {
+            prefix<P> right_p = prefix<P>(p.v | (1ULL << (sizeof(P) * 8 - 1 - p.len)), p.len + 1);
+            dump(node->right.get(), right_p, prefixes);
+        }
+    }
+
+    template<typename P>
+    void dump(std::vector<prefix<P>>& prefixes) const {
+        dump(&root, {0, 0}, prefixes);
+    }
+
+    size_t max_depth() const {
+        return root.max_depth();
     }
 
 };
