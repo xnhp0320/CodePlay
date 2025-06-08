@@ -192,7 +192,7 @@ public:
             dump(node->left.get(), left_p, prefixes);
         }
         if (node->right) {
-            prefix<P> right_p = prefix<P>(p.v | (1ULL << (sizeof(P) * 8 - 1 - p.len)), p.len + 1);
+            prefix<P> right_p = prefix<P>(p.v | (P(1) << (sizeof(P) * 8 - 1 - p.len)), p.len + 1);
             dump(node->right.get(), right_p, prefixes);
         }
     }
