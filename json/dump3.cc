@@ -82,6 +82,7 @@ public:
     }
 
     copy_ptr& operator=(copy_ptr other) {
+        delete _ptr;
         _ptr = other._ptr;
         other._ptr = nullptr;
         return *this;

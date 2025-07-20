@@ -1,0 +1,11 @@
+{
+	"authors": [
+		"he peng"
+	],
+	"dependencies": {
+		"numem": "~>1.2.2",
+		"numem:hookset-libc": "~>1.2.2"
+	},
+	"license": "proprietary",
+	"name": "nogc"
+}
