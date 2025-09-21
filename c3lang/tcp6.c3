@@ -1,6 +1,9 @@
 import std::net::tcp;
 import std::net::os;
 import std::io;
+import libc;
+
+extern fn CInt inet_ntop(AIFamily af, SockAddrPtr src, char* dst, Socklen_t dstlen);
 
 struct SockAddr_in {
     ushort       sin_family;
@@ -41,20 +44,26 @@ macro hton128(char[16] v) @if(!env::BIG_ENDIAN) {
     return ($typefrom(InetAddress.ipv6.typeid))(v);
 }
 
-fn void main() {
-    TcpServerSocket server_sock = tcp::listen("127.0.0.1", 8081, 64,
-                                              net::SocketOption.KEEPALIVE,
-                                              net::SocketOption.REUSEADDR)!!;
+fn ZString inet_n2str(AIFamily af, SockAddrPtr src) {
+    tlocal char[32] str;
+    inet_ntop(af, (SockAddrPtr)src, &str, 32);
+    return (ZString)&str;
+}
 
-    SockAddr_in *addr_in = (SockAddr_in*)&server_sock.ai_addr_storage;
-    InetAddress in_addr = { .ip4.val = htonl(addr_in.sin_addr) };
-    io::printfn("listen addr: %s:%d", in_addr, ntohs(addr_in.sin_port));
+fn void main() {
+    TcpServerSocket server_sock = tcp::listen("::1", 8081, 64,
+                                              net::SocketOption.KEEPALIVE,
+                                              net::SocketOption.REUSEADDR,
+                                              ip_protocol : net::IpProtocol.IPV6)!!;
+    SockAddr_in6 *addr_in = (SockAddr_in6*)&server_sock.ai_addr_storage;
+    ZString addr = inet_n2str(os::AF_INET6, (SockAddrPtr)&addr_in.sin6_addr);
+    io::printfn("listen addr: %s:%d", addr, ntohs(addr_in.sin6_port));
 
     while(1) {
         TcpSocket newsock = tcp::accept(&server_sock)!!;
-        addr_in = (SockAddr_in*)&newsock.ai_addr_storage;
-        in_addr = { .ip4.val = htonl(addr_in.sin_addr) };
-        io::printfn("connected from %s:%d", in_addr, ntohs(addr_in.sin_port));
+        addr_in = (SockAddr_in6*)&newsock.ai_addr_storage;
+        addr = inet_n2str(os::AF_INET6, (SockAddrPtr)&addr_in.sin6_addr);
+        io::printfn("connected from %s:%d", addr, ntohs(addr_in.sin6_port));
         String str = "Hello\r\n";
         newsock.write(str)!!;
         newsock.close()!!;
