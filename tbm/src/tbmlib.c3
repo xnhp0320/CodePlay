@@ -7,22 +7,7 @@ import tbmlib_common;
 
 const typeid[*] BITMAP_TYPES = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
-alias Ipv4Cidr = tbmlib_common::Ipv4Cidr;
 typedef StrideTypeInner = inline char;
-
-interface TbmAllocator {
-    fn void*? alloc(usz nodes_count);
-    fn void free(void * ptr);
-}
-
-typedef TrivalAllocator (TbmAllocator) = uptr;
-
-fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return calloc(nodes_count * TbmNode.sizeof);
-}
-fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
-    return free(ptr);
-}
 
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
@@ -47,6 +32,23 @@ struct TbmNode {
         BitmapType internal : 0 .. BITMAP_WIDTH - 2;
     }
     void *next;
+}
+
+typedef TrivalAllocator (TbmAllocator) = uptr;
+fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return calloc(nodes_count * TbmNode.sizeof);
+}
+fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
+    return free(ptr);
+}
+
+typedef TempTbmAllocator (TbmAllocator) = uptr;
+fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return tcalloc(nodes_count * TbmNode.sizeof);
+}
+
+fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
+
 }
 
 const ROUTE_NUM = TbmNode.sizeof / uint.sizeof;

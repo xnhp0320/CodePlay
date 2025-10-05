@@ -20,10 +20,10 @@ fn void test_bitmap7() {
 }
 
 fn void test_inl_check() {
-    InlStrideType{3} stride = {0b11}; 
+    InlStrideType{3} stride = {0b11};
     //map == 0b01000101
     BitmapType{3} bm = 0b01000000;
-    
+
     assert(bm.check_inl_bitmap(stride)!! == 1);
     bm = 0b00000101;
     assert(bm.check_inl_bitmap(stride)!! == 2);
@@ -44,3 +44,17 @@ fn void test_exl_check() {
     assert(bm.check_exl_bitmap(stride)!! == 1);
 }
 
+fn void test_node_insert() {
+    TbmNode{3} root;
+    TempTbmAllocator{3} alloc;
+    Ipv4Cidr cidr = {.ip = 0, .cidr = 3 };
+    @pool() {
+        root.insert(&alloc, cidr, 1)!!;
+        assert(root.external == 0b1);
+        assert(root.internal == 0b0);
+        TbmNode{3} *next = root.next;
+        assert(next.internal == 0b1);
+        assert(next.external == 0b0);
+        assert(*next.get_value(0) == 1);
+    };
+}
