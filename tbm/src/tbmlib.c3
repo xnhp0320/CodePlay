@@ -59,6 +59,25 @@ struct TbmRouteNode {
     char[TbmNode.sizeof % uint.sizoef] __pad @if(TbmNode.sizeof % uint.sizeof != 0);
 }
 
+struct TbmRouteIter {
+    TbmRouteNode *node;
+    usz inside_idx;
+}
+
+fn TbmRouteIter TbmRouteNode.routes_iter(&self) {
+    return { self - 1, 0 };
+}
+
+fn uint *TbmRouteIter.next(&self) {
+    uint *ret = &self.node.routes[self.inside_idx];
+    self.inside_idx ++;
+    if (self.inside_idx == ROUTE_NUM) {
+        self.node --;
+        self.inside_idx = 0;
+    }
+    return ret;
+}
+
 struct Tbm {
     TbmNode root;
     TbmAllocator alloc;
@@ -136,6 +155,7 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
 }
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
+   @require $typeof(#cidr).kindof == TypeKind.POINTER
 *>
 macro StrideType.@from(&self, #cidr) {
     *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip))) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
@@ -211,44 +231,25 @@ fn uint* TbmNode.get_value(self, usz pos) {
 }
 
 fn void TbmNode.insert_route(self, TbmRouteNode *new, TbmRouteNode *old, usz pos, uint v) {
-    usz tot_count = (usz)self.internal.popcount();
-    usz before_count = (usz)self.internal.count_bits(pos);
-    usz copy_to_count;
-    usz copy_from_count;
-    TbmRouteNode *copy_to_node = new - 1;
-    TbmRouteNode *copy_from_node = old - 1;
-    usz copy_to_inside_count @noinit;
-    usz copy_from_inside_count @noinit;
-    while (copy_to_count < before_count) {
-        copy_to_inside_count = copy_to_count % ROUTE_NUM;
-        copy_from_inside_count = copy_from_count % ROUTE_NUM;
-        copy_to_node.routes[copy_to_inside_count] = copy_from_node.routes[copy_from_inside_count];
-        copy_to_count ++;
-        copy_from_count ++;
-        if (copy_to_count % ROUTE_NUM == 0) {
-            copy_to_node --;
-        }
-        if (copy_from_count % ROUTE_NUM == 0) {
-            copy_from_node --;
-        }
+    TbmRouteIter new_iter = new.routes_iter();
+    if (old == null) {
+        *new_iter.next() = v;
+        return;
     }
 
-    copy_to_inside_count = copy_to_count % ROUTE_NUM;
-    copy_to_node.routes[copy_to_inside_count] = v;
-    copy_to_count ++;
-
-    while (copy_to_count < tot_count + 1) {
-        copy_to_inside_count = copy_to_count % ROUTE_NUM;
-        copy_from_inside_count = copy_from_count % ROUTE_NUM;
-        copy_to_node.routes[copy_to_inside_count] = copy_from_node.routes[copy_from_inside_count];
-        copy_to_count ++;
-        copy_from_count ++;
-        if (copy_to_count % ROUTE_NUM == 0) {
-            copy_to_node --;
-        }
-        if (copy_from_count % ROUTE_NUM == 0) {
-            copy_from_node --;
-        }
+    usz tot_count = (usz)self.internal.popcount();
+    usz before_count = (usz)self.internal.count_bits(pos);
+    usz copy_count;
+    TbmRouteIter old_iter = old.routes_iter();
+    while (copy_count < before_count) {
+        *new_iter.next() = *old_iter.next();
+        copy_count ++;
+    }
+    *new_iter.next() = v;
+    copy_count ++;
+    while (copy_count < tot_count + 1) {
+        *new_iter.next() = *old_iter.next();
+        copy_count ++;
     }
 }
 
