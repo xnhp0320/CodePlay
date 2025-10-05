@@ -132,7 +132,8 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
     }
     return tbmlib_common::MISSING?;
 }
-
+<* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
+*>
 macro StrideType.@from(&self, #cidr) {
     *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip))) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
     #cidr.ip <<= STRIDE;
@@ -158,7 +159,6 @@ fn usz TbmNode.count_exl_nodes(self) {
 }
 
 fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType stride) {
-    //in case uint128, we have to cast to usz.
     usz tot_exl_count = self.count_exl_nodes();
     usz tot_inl_count = self.count_inl_nodes();
     usz before_exl_count = (usz)self.external.count_bits(stride.val);
@@ -181,6 +181,7 @@ fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) 
     StrideType stride @noinit;
     stride.@from(&prefix);
     BitmapType external = self.external;
+    //in case uint128, we have to cast to usz.
     usz prev_count = (usz)external.popcount();
     external = @bitmap_set(external, stride.val);
     usz post_count = (usz)external.popcount();
