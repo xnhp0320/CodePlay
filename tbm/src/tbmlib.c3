@@ -134,12 +134,20 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
     }
     return tbmlib_common::MISSING?;
 }
+
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
 *>
 macro StrideType.@from(&self, #cidr) {
     *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip))) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
     #cidr.ip <<= STRIDE;
     #cidr.cidr -= STRIDE;
+}
+
+//change prefix form: 0xc0000000/2 into the form: 0b11/2, it's like remove the wildcards.
+<* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
+*>
+macro @remove_wildcard(#cidr) {
+    return #cidr.cidr == 0 ? 0 : (uint)(#cidr.ip >> ($typeof(#cidr.ip).sizeof * 8 - #cidr.cidr));
 }
 
 fn void InlStrideType.from(&self, StrideType stride) {
@@ -247,7 +255,7 @@ fn void TbmNode.insert_route(self, TbmRouteNode *new, TbmRouteNode *old, usz pos
 fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
     usz prev_count = self.count_inl_nodes();
     BitmapType internal = self.internal;
-    uint pos = @inl_bitpos(prefix.ip, prefix.cidr);
+    uint pos = @inl_bitpos(@remove_wildcard(prefix), prefix.cidr);
     internal = @bitmap_set(internal, pos);
     usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
     if (post_count == prev_count) {
@@ -265,7 +273,8 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) 
         self.internal = internal;
     }
 }
-
+<* @require tbmlib_common::@cidr_valid(prefix)
+*>
 fn void? TbmNode.insert(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
     if (prefix.cidr >= STRIDE) {
         return self.insert_exl(alloc, prefix, v);

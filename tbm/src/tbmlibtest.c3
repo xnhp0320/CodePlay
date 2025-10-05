@@ -44,7 +44,7 @@ fn void test_exl_check() {
     assert(bm.check_exl_bitmap(stride)!! == 1);
 }
 
-fn void test_node_insert() {
+fn void test_route_insert() {
     TbmNode{3} root;
     TempTbmAllocator{3} alloc;
     Ipv4Cidr cidr = {.ip = 0, .cidr = 3 };
@@ -56,5 +56,29 @@ fn void test_node_insert() {
         assert(next.internal == 0b1);
         assert(next.external == 0b0);
         assert(*next.get_value(0) == 1);
+
+        cidr = {.ip = 0, .cidr = 6 };
+        root.insert(&alloc, cidr, 2)!!;
+        assert(root.external == 0b1);
+        next = root.next;
+        assert(next.external == 0b1);
+        next = next.next;
+        assert(next.internal == 0b1);
+        assert(*next.get_value(0) == 2);
+
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.insert(&alloc, cidr, 3)!!;
+        assert(root.external == 0b10000001);
+        next = (TbmNode{3}*)root.next + 1;
+        assert(next.external == 0b1);
+        assert(next.internal == 0b0);
+        next = next.next;
+        assert(next.internal == 0b1);
+        assert(*next.get_value(0) == 3);
+
+        cidr = {.ip = 0xc0000000, .cidr = 2};
+        root.insert(&alloc, cidr, 4)!!;
+        assert(root.internal == 0b01000000);
+        assert(*root.get_value(6) == 4);
     };
 }
