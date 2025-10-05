@@ -80,5 +80,10 @@ fn void test_route_insert() {
         root.insert(&alloc, cidr, 4)!!;
         assert(root.internal == 0b01000000);
         assert(*root.get_route(6) == 4);
+
+        //update
+        root.insert(&alloc, cidr, 5)!!;
+        assert(*root.get_route(6) == 5);
+
     };
 }
