@@ -1,7 +1,6 @@
 import std::net::tcp;
 import std::net::os;
 import std::io;
-import libc;
 
 extern fn CInt inet_ntop(AIFamily af, SockAddrPtr src, char* dst, Socklen_t dstlen);
 

@@ -2,8 +2,9 @@ import std::net::tcp;
 import std::net::os;
 import std::io;
 
-struct SockAddr_in {
-    ushort       sin_family;
+struct SockAddr_in (Printable) {
+    char         addr_len;
+    char         family;
     ushort       sin_port;       // Port number (network byte order)
     uint         sin_addr;
 }
@@ -16,6 +17,19 @@ struct SockAddr_in6 {
     uint      sin6_scope_id;
 }
 
+extern fn CInt inet_ntop(AIFamily af, void* src, char* dst, Socklen_t dstlen);
+extern fn CInt getsockname(CInt socket, void *sockaddr, Socklen_t *len); 
+
+fn ZString inet_n2str(AIFamily af, void* src) {
+    tlocal char[32] str;
+    inet_ntop(af, src, &str, 32);
+    return (ZString)&str;
+}
+
+fn usz? SockAddr_in.to_format(&self, Formatter *formatter) @dynamic {
+    ZString zstr = inet_n2str(os::AF_INET, (void*)&self.sin_addr);
+    return formatter.printf("%s:%d family %d", zstr.str_view(), htons(self.sin_port), self.family);
+}
 
 macro ntohs(ushort v) @if(!env::BIG_ENDIAN) {
     return (ushort)(v << 8) | (v >> 8);
@@ -42,19 +56,23 @@ macro hton128(char[16] v) @if(!env::BIG_ENDIAN) {
 }
 
 fn void main() {
-    TcpServerSocket server_sock = tcp::listen("127.0.0.1", 8081, 64,
+    TcpServerSocket server_sock = tcp::listen("127.0.0.1", 0, 64,
                                               net::SocketOption.KEEPALIVE,
                                               net::SocketOption.REUSEADDR)!!;
 
     SockAddr_in *addr_in = (SockAddr_in*)&server_sock.ai_addr_storage;
-    InetAddress in_addr = { .ip4.val = htonl(addr_in.sin_addr) };
-    io::printfn("listen addr: %s:%d", in_addr, ntohs(addr_in.sin_port));
+    io::printfn("listen addr: %s", addr_in);
+    io::printfn("fd is %d", server_sock.sock);
+    SockAddr_in localaddr;
+    Socklen_t len;
+    getsockname(server_sock.sock, &localaddr, &len);
+    io::printfn("listen addr: %s %d %d", localaddr, len, localaddr.family);
+    io::printfn("af_inet %d", os::AF_INET);
 
     while(1) {
         TcpSocket newsock = tcp::accept(&server_sock)!!;
         addr_in = (SockAddr_in*)&newsock.ai_addr_storage;
-        in_addr = { .ip4.val = htonl(addr_in.sin_addr) };
-        io::printfn("connected from %s:%d", in_addr, ntohs(addr_in.sin_port));
+        io::printfn("connected from %s", addr_in);
         String str = "Hello\r\n";
         newsock.write(str)!!;
         newsock.close()!!;
