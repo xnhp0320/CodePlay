@@ -223,7 +223,7 @@ fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) 
     }
 }
 
-fn uint* TbmNode.get_value(self, usz pos) {
+fn uint* TbmNode.get_route(self, usz pos) {
     usz offset = (usz)self.internal.count_bits(pos);
     usz node_offset = (offset + ROUTE_NUM) / ROUTE_NUM;
     TbmRouteNode *node = (TbmRouteNode*)self.next - node_offset;
@@ -260,7 +260,7 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) 
     internal = @bitmap_set(internal, pos);
     usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
     if (post_count == prev_count) {
-        uint *value = self.get_value(pos);
+        uint *value = self.get_route(pos);
         //update
         *value = v;
     } else {
