@@ -1,13 +1,16 @@
 <*
 @require STRIDE >= 3 && STRIDE <= 7
+@require KeyType.sizeof <= 16
+@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
 *>
-module tbmlib {STRIDE};
+module tbmlib {STRIDE, KeyType, ValueType};
 import std::io;
 import tbmlib_common;
 
 const typeid[*] BITMAP_TYPES = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
 typedef StrideTypeInner = inline char;
+alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
 
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
@@ -20,6 +23,11 @@ bitstruct InlStrideType : StrideTypeInner {
 macro stride_mask($Type) {
     var mask = (1u << STRIDE) - 1;
     return ($Type)mask << ($Type.sizeof * 8 - STRIDE);
+}
+
+struct Cidr {
+    KeyType ip;
+    uint cidr;
 }
 
 const BITMAP_WIDTH = (1 << STRIDE);
@@ -51,25 +59,25 @@ fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
 
 }
 
-const ROUTE_NUM = TbmNode.sizeof / uint.sizeof;
+const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
 
-struct TbmRouteNode {
-    uint[ROUTE_NUM] routes;
+struct TbmValueNode {
+    ValueType[ROUTE_NUM] values;
     //make sure the TbmRouteNode size equals to TbmNode
-    char[TbmNode.sizeof % uint.sizoef] __pad @if(TbmNode.sizeof % uint.sizeof != 0);
+    char[TbmNode.sizeof % ValueType.sizoef] __pad @if(TbmNode.sizeof % ValueType.sizeof != 0);
 }
 
-struct TbmRouteIter {
-    TbmRouteNode *node;
+struct TbmValueIter {
+    TbmValueNode *node;
     usz inside_idx;
 }
 
-fn TbmRouteIter TbmRouteNode.routes_iter(&self) {
+fn TbmValueIter TbmValueNode.values_iter(&self) {
     return { self - 1, 0 };
 }
 
-fn uint *TbmRouteIter.next(&self) {
-    uint *ret = &self.node.routes[self.inside_idx];
+fn ValueType *TbmValueIter.next(&self) {
+    uint *ret = &self.node.values[self.inside_idx];
     self.inside_idx ++;
     if (self.inside_idx == ROUTE_NUM) {
         self.node --;
@@ -97,11 +105,11 @@ macro @bitmap_set(BitmapType #bitmap, uint #val) {
 // The return value should in [0, (1 << STRIDE) - 2].
 
 <* @require #prefix < (1 << (STRIDE - 1))
-   @require #cidr >= 0 && #cidr < STRIDE
+   @require #len >= 0 && #len < STRIDE
    @ensure return >= 0 && return <= (1 << STRIDE) - 2
 *>
-macro @inl_bitpos(uint #prefix, uint #cidr) {
-    return ((1u << #cidr) - 1) + #prefix;
+macro @inl_bitpos(uint #prefix, uint #len) {
+    return ((1u << #len) - 1) + #prefix;
 }
 
 const BitmapType[1<<(STRIDE-1)] INL_CHECK_MAP = gen_inl_check_map();
@@ -140,7 +148,7 @@ macro BitmapType.count_bits(self, usz offset) {
 fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
     BitmapType check = INL_CHECK_MAP[prefix.val] & self;
     if (check != 0) {
-        usz offset = BITMAP_WIDTH - 1 - (usz)$$clz(check);
+        usz offset = BITMAP_WIDTH - 1 - (usz)check.clz();
         return (usz)check.count_bits(offset) + 1;
     }
     return tbmlib_common::MISSING?;
@@ -161,13 +169,6 @@ macro StrideType.@from(&self, #cidr) {
     *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip))) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
     #cidr.ip <<= STRIDE;
     #cidr.cidr -= STRIDE;
-}
-
-//change prefix form: 0xc0000000/2 into the form: 0b11/2, it's like remove the wildcards.
-<* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
-*>
-macro @remove_wildcard(#cidr) {
-    return #cidr.cidr == 0 ? 0 : (uint)(#cidr.ip >> ($typeof(#cidr.ip).sizeof * 8 - #cidr.cidr));
 }
 
 fn void InlStrideType.from(&self, StrideType stride) {
@@ -207,7 +208,7 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
     return new_after - 1;
 }
 
-fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
+fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, uint v) {
     StrideType stride @noinit;
     stride.@from(&prefix);
     BitmapType external = self.external;
@@ -223,15 +224,16 @@ fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) 
     }
 }
 
-fn uint* TbmNode.get_route(self, usz pos) {
+fn ValueType* TbmNode.get_value(self, usz pos) {
     usz offset = (usz)self.internal.count_bits(pos);
     usz node_offset = (offset + ROUTE_NUM) / ROUTE_NUM;
-    TbmRouteNode *node = (TbmRouteNode*)self.next - node_offset;
-    return &node.routes[offset % ROUTE_NUM];
+    TbmValueNode *node = (TbmValueNode*)self.next - node_offset;
+    return &node.values[offset % ROUTE_NUM];
 }
 
-fn void TbmNode.insert_route(self, TbmRouteNode *new, TbmRouteNode *old, usz pos, uint v) {
-    TbmRouteIter new_iter = new.routes_iter();
+fn void TbmNode.insert_value(self, TbmValueNode *new, TbmValueNode *old,
+                             usz pos, ValueType v) {
+    TbmValueIter new_iter = new.values_iter();
     if (old == null) {
         *new_iter.next() = v;
         return;
@@ -240,7 +242,7 @@ fn void TbmNode.insert_route(self, TbmRouteNode *new, TbmRouteNode *old, usz pos
     usz tot_count = (usz)self.internal.popcount();
     usz before_count = (usz)self.internal.count_bits(pos);
     usz copy_count;
-    TbmRouteIter old_iter = old.routes_iter();
+    TbmValueIter old_iter = old.values_iter();
     while (copy_count < before_count) {
         *new_iter.next() = *old_iter.next();
         copy_count ++;
@@ -253,30 +255,30 @@ fn void TbmNode.insert_route(self, TbmRouteNode *new, TbmRouteNode *old, usz pos
     }
 }
 
-fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
+fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     usz prev_count = self.count_inl_nodes();
     BitmapType internal = self.internal;
     uint pos = @inl_bitpos(@remove_wildcard(prefix), prefix.cidr);
     internal = @bitmap_set(internal, pos);
     usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
     if (post_count == prev_count) {
-        uint *value = self.get_route(pos);
+        ValueType *value = self.get_value(pos);
         //update
         *value = v;
     } else {
         usz exl_nodes = self.count_exl_nodes();
         void *new_nodes = alloc.alloc(post_count + exl_nodes)!;
-        void *new_exl = (TbmRouteNode*)new_nodes + post_count;
+        void *new_exl = (TbmNode*)new_nodes + post_count;
         mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
-        self.insert_route((TbmRouteNode*)new_nodes + post_count, self.next, pos, v);
-        alloc.free((TbmRouteNode*)self.next - prev_count);
+        self.insert_value((TbmValueNode*)new_nodes + post_count, self.next, pos, v);
+        alloc.free((TbmValueNode*)self.next - prev_count);
         self.next = new_exl;
         self.internal = internal;
     }
 }
 <* @require tbmlib_common::@cidr_valid(prefix)
 *>
-fn void? TbmNode.insert(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
+fn void? TbmNode.insert(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     if (prefix.cidr >= STRIDE) {
         return self.insert_exl(alloc, prefix, v);
     } else {
@@ -284,6 +286,10 @@ fn void? TbmNode.insert(&self, TbmAllocator alloc, Ipv4Cidr prefix, uint v) {
     }
 }
 
-fn void? Tbm.insert(&self, Ipv4Cidr prefix, uint v) {
+fn void? Tbm.insert(&self, Cidr prefix, ValueType v) {
     return self.root.insert(self.alloc, prefix, v);
 }
+
+//fn uint? Tbm.lookup(self, uint ip) {
+//
+//}
