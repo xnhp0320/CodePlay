@@ -1,5 +1,5 @@
 module tbmlib_common;
-faultdef MISSING;
+faultdef MISSING, VALUE_NOT_FOUND;
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
 *>
@@ -17,6 +17,11 @@ macro bool @cidr_valid(#cidr) {
 *>
 macro @remove_wildcard(#cidr) {
     return #cidr.cidr == 0 ? 0 : (uint)(#cidr.ip >> ($typeof(#cidr.ip).sizeof * 8 - #cidr.cidr));
+}
+
+macro stride_mask($Type, shift) {
+    var mask = (1u << shift) - 1;
+    return ($Type)mask << ($Type.sizeof * 8 - shift);
 }
 
 interface TbmAllocator {

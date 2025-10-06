@@ -11,6 +11,7 @@ const typeid[*] BITMAP_TYPES = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
 typedef StrideTypeInner = inline char;
 alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
+alias stride_mask @private = tbmlib_common::stride_mask;
 
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
@@ -18,11 +19,6 @@ bitstruct StrideType : StrideTypeInner {
 
 bitstruct InlStrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 2;
-}
-
-macro stride_mask($Type) {
-    var mask = (1u << STRIDE) - 1;
-    return ($Type)mask << ($Type.sizeof * 8 - STRIDE);
 }
 
 struct Cidr {
@@ -148,8 +144,7 @@ macro BitmapType.count_bits(self, usz offset) {
 fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
     BitmapType check = INL_CHECK_MAP[prefix.val] & self;
     if (check != 0) {
-        usz offset = BITMAP_WIDTH - 1 - (usz)check.clz();
-        return (usz)check.count_bits(offset) + 1;
+        return BITMAP_WIDTH - 1 - (usz)check.clz();
     }
     return tbmlib_common::MISSING?;
 }
@@ -164,11 +159,17 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
    @require $typeof(#cidr).kindof == TypeKind.POINTER
+   @require #cidr.cidr >= STRIDE
 *>
 macro StrideType.@from(&self, #cidr) {
-    *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip))) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
+    *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip), STRIDE)) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
     #cidr.ip <<= STRIDE;
     #cidr.cidr -= STRIDE;
+}
+
+macro StrideType.@from_key(&self, KeyType #ip) {
+    *self = {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
+    #ip <<= STRIDE;
 }
 
 fn void InlStrideType.from(&self, StrideType stride) {
@@ -289,7 +290,41 @@ fn void? TbmNode.insert(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
 fn void? Tbm.insert(&self, Cidr prefix, ValueType v) {
     return self.root.insert(self.alloc, prefix, v);
 }
+const uint NODE_CACHE_SIZE = (KeyType.sizeof * 8) / STRIDE;
 
-//fn uint? Tbm.lookup(self, uint ip) {
-//
-//}
+struct SearchCache {
+    TbmNode *node;
+    StrideType stride;
+}
+
+fn ValueType? Tbm.lookup(self, KeyType ip) {
+    TbmNode *node = &self.root;
+    SearchCache[NODE_CACHE_SIZE] cache @noinit;
+    uint cache_idx;
+    StrideType stride @noinit;
+
+    while(1) {
+        stride.@from_key(ip);
+        if (try offset = node.external.check_exl_bitmap(stride)) {
+            cache[cache_idx ++] = {node, stride};
+            node = (TbmNode *)node.next;
+        } else {
+            //here the stride is not a full stride:
+            InlStrideType inl_stride @noinit;
+            inl_stride.from(stride);
+            if (try offset = node.internal.check_inl_bitmap(inl_stride)) {
+                return *node.get_value(offset);
+            } else {
+                foreach_r(&c : cache[:cache_idx]) {
+                    inl_stride.from(c.stride);
+                    if (try offset = c.node.internal.check_inl_bitmap(inl_stride)) {
+                        return *node.get_value(offset);
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    return tbmlib_common::VALUE_NOT_FOUND?;
+}

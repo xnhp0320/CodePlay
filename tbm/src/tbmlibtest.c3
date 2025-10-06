@@ -25,7 +25,7 @@ fn void test_inl_check() {
     //map == 0b01000101
     BitmapType3 bm = 0b01000000;
 
-    assert(bm.check_inl_bitmap(stride)!! == 1);
+    assert(bm.check_inl_bitmap(stride)!! == 6);
     bm = 0b00000101;
     assert(bm.check_inl_bitmap(stride)!! == 2);
     stride = {0b10};
