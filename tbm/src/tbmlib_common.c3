@@ -28,3 +28,11 @@ interface TbmAllocator {
     fn void*? alloc(usz nodes_count);
     fn void free(void * ptr);
 }
+
+macro @foreach_1bit(bm; @body(pos)) {
+    while (bm != 0) {
+        uint pos = (uint)bm.ctz();
+        @body(pos);
+        bm = bm & (bm - 1);
+    }
+}

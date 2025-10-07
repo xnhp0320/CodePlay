@@ -176,17 +176,17 @@ fn void InlStrideType.from(&self, StrideType stride) {
     *self = { stride.val >> 1 };
 }
 
-fn TbmNode* TbmNode.next_exl(self, StrideType stride) {
+fn TbmNode* TbmNode.next_exl(&self, StrideType stride) {
     usz offset = self.external.check_exl_bitmap(stride)!!;
     return (TbmNode*)self.next + offset;
 }
 
-fn usz TbmNode.count_inl_nodes(self) {
+fn usz TbmNode.count_inl_nodes(&self) {
     usz count = (usz)self.internal.popcount();
     return count == 0 ? 0 : (count + ROUTE_NUM) / ROUTE_NUM;
 }
 
-fn usz TbmNode.count_exl_nodes(self) {
+fn usz TbmNode.count_exl_nodes(&self) {
     return (usz)self.external.popcount();
 }
 
@@ -225,14 +225,14 @@ fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, uint v) {
     }
 }
 
-fn ValueType* TbmNode.get_value(self, usz pos) {
+fn ValueType* TbmNode.get_value(&self, usz pos) {
     usz offset = (usz)self.internal.count_bits(pos);
     usz node_offset = (offset + ROUTE_NUM) / ROUTE_NUM;
     TbmValueNode *node = (TbmValueNode*)self.next - node_offset;
     return &node.values[offset % ROUTE_NUM];
 }
 
-fn void TbmNode.insert_value(self, TbmValueNode *new, TbmValueNode *old,
+fn void TbmNode.insert_value(&self, TbmValueNode *new, TbmValueNode *old,
                              usz pos, ValueType v) {
     TbmValueIter new_iter = new.values_iter();
     if (old == null) {
@@ -297,7 +297,7 @@ struct SearchCache {
     StrideType stride;
 }
 
-fn ValueType? Tbm.lookup(self, KeyType ip) {
+fn ValueType? Tbm.lookup(&self, KeyType ip) {
     TbmNode *node = &self.root;
     SearchCache[NODE_CACHE_SIZE] cache @noinit;
     uint cache_idx;
@@ -309,7 +309,6 @@ fn ValueType? Tbm.lookup(self, KeyType ip) {
             cache[cache_idx ++] = {node, stride};
             node = (TbmNode *)node.next;
         } else {
-            //here the stride is not a full stride:
             InlStrideType inl_stride @noinit;
             inl_stride.from(stride);
             if (try offset = node.internal.check_inl_bitmap(inl_stride)) {
@@ -327,4 +326,42 @@ fn ValueType? Tbm.lookup(self, KeyType ip) {
     }
 
     return tbmlib_common::VALUE_NOT_FOUND?;
+}
+
+alias Iterator = fn void(Cidr* cidr, void *aux);
+alias @foreach_1bit = tbmlib_common::@foreach_1bit;
+
+fn void TbmNode.iterate(&self, Cidr* cidr, Iterator f, void *aux) {
+    @foreach_1bit(self.internal; uint pos) {
+        //pos -> (prefix, len)
+        //remember that we have  ((1 << len) - 1) + prefix = pos
+        //since len belongs to [0, STRIDE - 1], we can search from
+        //0, 1, 3, 7, 15, ...
+        Cidr curr_cidr = *cidr;
+        int len;
+        for(len = STRIDE - 1; len >= 0; len --) {
+            if (pos >= (1u << len) - 1) {
+                break;
+            }
+        }
+        KeyType prefix = (KeyType)(pos - ((1u << len) - 1));
+        curr_cidr.ip <<= len;
+        curr_cidr.ip |= prefix;
+        curr_cidr.cidr += (uint)len;
+        f(&curr_cidr, aux);
+    };
+
+    @foreach_1bit(self.external; uint pos) {
+        TbmNode *node = self.next_exl( { (StrideTypeInner) pos } );
+        Cidr curr_cidr = *cidr;
+        curr_cidr.ip <<= STRIDE;
+        curr_cidr.ip |= pos;
+        curr_cidr.cidr += STRIDE;
+        node.iterate(&curr_cidr, f, aux);
+    };
+}
+
+fn void Tbm.iterate(&self, Iterator f, void *aux) {
+    Cidr cidr;
+    self.root.iterate(&cidr, f, aux);
 }
