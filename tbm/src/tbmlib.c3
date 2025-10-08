@@ -7,7 +7,7 @@ module tbmlib {STRIDE, KeyType, ValueType};
 import std::io;
 import tbmlib_common;
 
-const typeid[*] BITMAP_TYPES = { char, ushort, uint, ulong, uint128 };
+const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
 typedef StrideTypeInner = inline char;
 alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
@@ -21,9 +21,14 @@ bitstruct InlStrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 2;
 }
 
-struct Cidr {
+struct Cidr (Printable) {
     KeyType ip;
     uint cidr;
+}
+
+fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
+    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
+    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
 }
 
 const BITMAP_WIDTH = (1 << STRIDE);
@@ -328,10 +333,10 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
     return tbmlib_common::VALUE_NOT_FOUND?;
 }
 
-alias Iterator = fn void(Cidr* cidr, void *aux);
+alias Iterator = fn void(Cidr* cidr, ValueType *value, void *aux);
 alias @foreach_1bit = tbmlib_common::@foreach_1bit;
 
-fn void TbmNode.iterate(&self, Cidr* cidr, Iterator f, void *aux) {
+fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
     @foreach_1bit(self.internal; uint pos) {
         //pos -> (prefix, len)
         //remember that we have  ((1 << len) - 1) + prefix = pos
@@ -345,23 +350,21 @@ fn void TbmNode.iterate(&self, Cidr* cidr, Iterator f, void *aux) {
             }
         }
         KeyType prefix = (KeyType)(pos - ((1u << len) - 1));
-        curr_cidr.ip <<= len;
-        curr_cidr.ip |= prefix;
+        curr_cidr.ip |= prefix << (KeyType.sizeof * 8 - depth - len);
         curr_cidr.cidr += (uint)len;
-        f(&curr_cidr, aux);
+        f(&curr_cidr, self.get_value(pos), aux);
     };
 
     @foreach_1bit(self.external; uint pos) {
         TbmNode *node = self.next_exl( { (StrideTypeInner) pos } );
         Cidr curr_cidr = *cidr;
-        curr_cidr.ip <<= STRIDE;
-        curr_cidr.ip |= pos;
+        curr_cidr.ip |= pos << (KeyType.sizeof * 8 - depth - STRIDE);
         curr_cidr.cidr += STRIDE;
-        node.iterate(&curr_cidr, f, aux);
+        node.iterate(&curr_cidr, depth + STRIDE, f, aux);
     };
 }
 
 fn void Tbm.iterate(&self, Iterator f, void *aux) {
     Cidr cidr;
-    self.root.iterate(&cidr, f, aux);
+    self.root.iterate(&cidr, 0, f, aux);
 }
