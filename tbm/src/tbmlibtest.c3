@@ -98,15 +98,21 @@ fn void test_cidr_print() @test {
     };
 }
 
-fn void output(Cidr{3, uint, uint}* cidr, uint *value, void *aux) @local {
-    DString *str = (DString*)aux;
-    str.appendf("%s -> %d\n", *cidr, *value);
+macro @output(#cidr, #value, #aux) @local {
+    DString *str = (DString*)#aux;
+    str.appendf("%s -> %d\n", *#cidr, *#value);
 }
 
-fn void test_iterate() @test {
-    TbmNode{3, uint, uint} root;
-    TempTbmAllocator{3, uint, uint} alloc;
-    Cidr{3, uint, uint} cidr = {.ip = 0, .cidr = 3 };
+fn void output_3(Cidr{3, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+fn void output_4(Cidr{4, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+fn void output_5(Cidr{5, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+fn void output_6(Cidr{6, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+fn void output_7(Cidr{7, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+
+macro gen_iterate_test($s) {
+    TbmNode{$s, uint, uint} root;
+    TempTbmAllocator{$s, uint, uint} alloc;
+    Cidr{$s, uint, uint} cidr = {.ip = 0, .cidr = 3 };
 
     @pool() {
         DString out = dstring::new(tmem, "");
@@ -118,7 +124,22 @@ fn void test_iterate() @test {
         cidr = {.ip = 0xc0000000, .cidr = 2};
         root.insert(&alloc, cidr, 4)!!;
         cidr = {};
-        root.iterate(&cidr, 0, &output, (void*)&out);
-        io::print(out.str_view());
+        root.iterate(&cidr, 0, &$eval(@sprintf("output_%s", $s)), (void*)&out);
+        Splitter split = out.str_view().tokenize_all("\n");
+        //TODO: need to sort the splitter and make the result consistent with all stride.
+        assert(split.next()!! == "0xc0000000/2 -> 4");
+        assert(split.next()!! == "0x00000000/3 -> 1");
+        assert(split.next()!! == "0x00000000/6 -> 2");
+        assert(split.next()!! == "0xe0000000/6 -> 3");
     };
+}
+
+macro @gen_tests(#test) {
+    //$for var $s = 3; $s <= 7; $s++:
+    #test(3);
+    //$endfor;
+}
+
+fn void test_iterate() @test {
+    @gen_tests(gen_iterate_test);
 }
