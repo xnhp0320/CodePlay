@@ -4,7 +4,6 @@ import tbmlib_common;
 import std::io;
 
 alias BitmapType6 = tbmlib::BitmapType {6, uint, uint};
-alias BitmapType3 = tbmlib::BitmapType {3, uint, uint};
 alias BitmapType7 = tbmlib::BitmapType {7, uint, uint};
 
 alias @bitmap_set6 = tbmlib::@bitmap_set {6, uint, uint};
@@ -20,6 +19,7 @@ fn void test_bitmap7() @test {
     assert(@bitmap_set{7, uint, uint}(v, 0) == 1);
 }
 
+alias BitmapType3 = tbmlib::BitmapType {3, uint, uint};
 fn void test_inl_check() @test {
     InlStrideType{3, uint, uint} stride = {0b11};
     //map == 0b01000101
