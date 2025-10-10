@@ -380,14 +380,14 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
         //remember that we have  ((1 << len) - 1) + prefix = pos
         //since len belongs to [0, STRIDE - 1], we can search from
         //0, 1, 3, 7, 15, ...
-        Cidr curr_cidr = *cidr;
-        int len;
-        for(len = STRIDE - 1; len >= 0; len --) {
-            if (pos >= (1u << len) - 1) {
-                break;
-            }
-        }
+
+        //another way to do this is to plus one to `pos`, then we know
+        //that pos + 1 >= (1<<len), so could check the bits by
+        //uint.sizeof * 8 - (pos+1).clz() - 1:
+        uint len = uint.sizeof * 8 - (pos+1).clz() - 1;
         KeyType prefix = (KeyType)(pos - ((1u << len) - 1));
+
+        Cidr curr_cidr = *cidr;
         curr_cidr.ip |= prefix << (KeyType.sizeof * 8 - depth - len);
         curr_cidr.cidr += (uint)len;
         f(&curr_cidr, self.get_value(pos), aux);
