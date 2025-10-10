@@ -38,19 +38,14 @@ macro @foreach_1bit(bm; @body(pos)) {
 }
 <*
 @require STRIDE >= 3 && STRIDE <= 7
-@require KeyType.sizeof <= 16
-@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
 *>
-module tbmlib {STRIDE, KeyType, ValueType};
-import std::io;
+module tbmlib_bitmap {STRIDE};
 import tbmlib_common;
-
+import std::io;
 const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
-typedef StrideTypeInner = inline char;
-alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
 alias stride_mask @private = tbmlib_common::stride_mask;
-
+typedef StrideTypeInner = inline char;
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
 }
@@ -59,83 +54,14 @@ bitstruct InlStrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 2;
 }
 
-struct Cidr (Printable) {
-    KeyType ip;
-    uint cidr;
-}
-
-fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
-    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
-    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
-}
-
 const BITMAP_WIDTH = (1 << STRIDE);
 const INL_STRIDE = STRIDE - 1;
-
-//Tree bitmap Node def
-struct TbmNode {
-    BitmapType external;
-    bitstruct : BitmapType {
-        BitmapType internal : 0 .. BITMAP_WIDTH - 2;
-    }
-    void *next;
-}
-
-typedef TrivalAllocator (TbmAllocator) = uptr;
-fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return calloc(nodes_count * TbmNode.sizeof);
-}
-fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
-    return free(ptr);
-}
-
-typedef TempTbmAllocator (TbmAllocator) = uptr;
-fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return tcalloc(nodes_count * TbmNode.sizeof);
-}
-
-fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
-
-}
-
-const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
-
-struct TbmValueNode {
-    ValueType[ROUTE_NUM] values;
-    //make sure the TbmRouteNode size equals to TbmNode
-    char[TbmNode.sizeof % ValueType.sizoef] __pad @if(TbmNode.sizeof % ValueType.sizeof != 0);
-}
-
-struct TbmValueIter {
-    TbmValueNode *node;
-    usz inside_idx;
-}
-
-fn TbmValueIter TbmValueNode.values_iter(&self) {
-    return { self - 1, 0 };
-}
-
-fn ValueType *TbmValueIter.next(&self) {
-    uint *ret = &self.node.values[self.inside_idx];
-    self.inside_idx ++;
-    if (self.inside_idx == ROUTE_NUM) {
-        self.node --;
-        self.inside_idx = 0;
-    }
-    return ret;
-}
-
-struct Tbm {
-    TbmNode root;
-    TbmAllocator alloc;
-}
 
 <* @require #val < BITMAP_WIDTH
 *>
 macro @bitmap_set(BitmapType #bitmap, uint #val) {
     return #bitmap | ((BitmapType)1 << #val);
 }
-
 
 // 0/1 -> should be the position 1,
 // 00/2 -> should be the position 3.
@@ -210,13 +136,106 @@ macro StrideType.@from(&self, #cidr) {
     #cidr.cidr -= STRIDE;
 }
 
+fn void InlStrideType.from(&self, StrideType stride) {
+    *self = { stride.val >> 1 };
+}
+
+<*
+@require STRIDE >= 3 && STRIDE <= 7
+@require KeyType.sizeof <= 16
+@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
+*>
+module tbmlib {STRIDE, KeyType, ValueType};
+import std::io;
+import tbmlib_common;
+import tbmlib_bitmap;
+
+alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
+alias stride_mask @private = tbmlib_common::stride_mask;
+
+alias BITMAP_WIDTH @private = tbmlib_bitmap::BITMAP_WIDTH {STRIDE};
+alias INL_STRIDE @private = tbmlib_bitmap::INL_STRIDE {STRIDE};
+alias INL_CHECK_MAP @private = tbmlib_bitmap::INL_CHECK_MAP {STRIDE};
+alias @bitmap_set @private = tbmlib_bitmap::@bitmap_set {STRIDE};
+alias @inl_bitpos @private = tbmlib_bitmap::@inl_bitpos {STRIDE};
+alias BitmapType @private = tbmlib_bitmap::BitmapType {STRIDE};
+alias StrideType @private = tbmlib_bitmap::StrideType {STRIDE};
+alias InlStrideType @private = tbmlib_bitmap::InlStrideType {STRIDE};
+
+
+
+struct Cidr (Printable) {
+    KeyType ip;
+    uint cidr;
+}
+
+fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
+    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
+    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
+}
+
+
+//Tree bitmap Node def
+struct TbmNode {
+    BitmapType external;
+    bitstruct : BitmapType {
+        BitmapType internal : 0 .. BITMAP_WIDTH - 2;
+    }
+    void *next;
+}
+
+typedef TrivalAllocator (TbmAllocator) = uptr;
+fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return calloc(nodes_count * TbmNode.sizeof);
+}
+fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
+    return free(ptr);
+}
+
+typedef TempTbmAllocator (TbmAllocator) = uptr;
+fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return tcalloc(nodes_count * TbmNode.sizeof);
+}
+
+fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
+
+}
+
+const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
+
+struct TbmValueNode {
+    ValueType[ROUTE_NUM] values;
+    //make sure the TbmRouteNode size equals to TbmNode
+    char[TbmNode.sizeof % ValueType.sizoef] __pad @if(TbmNode.sizeof % ValueType.sizeof != 0);
+}
+
+struct TbmValueIter {
+    TbmValueNode *node;
+    usz inside_idx;
+}
+
+fn TbmValueIter TbmValueNode.values_iter(&self) {
+    return { self - 1, 0 };
+}
+
+fn ValueType *TbmValueIter.next(&self) {
+    uint *ret = &self.node.values[self.inside_idx];
+    self.inside_idx ++;
+    if (self.inside_idx == ROUTE_NUM) {
+        self.node --;
+        self.inside_idx = 0;
+    }
+    return ret;
+}
+
+struct Tbm {
+    TbmNode root;
+    TbmAllocator alloc;
+}
+
 macro StrideType.@from_key(&self, KeyType #ip) {
     *self = {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
     #ip <<= STRIDE;
-}
-
-fn void InlStrideType.from(&self, StrideType stride) {
-    *self = { stride.val >> 1 };
 }
 
 fn TbmNode* TbmNode.next_exl(&self, StrideType stride) {

@@ -1,12 +1,13 @@
 module tbmlibtest;
 import tbmlib;
 import tbmlib_common;
+import tbmlib_bitmap;
 import std::io;
 
-alias BitmapType6 = tbmlib::BitmapType {6, uint, uint};
-alias BitmapType7 = tbmlib::BitmapType {7, uint, uint};
+alias BitmapType6 = tbmlib_bitmap::BitmapType {6};
+alias BitmapType7 = tbmlib_bitmap::BitmapType {7};
 
-alias @bitmap_set6 = tbmlib::@bitmap_set {6, uint, uint};
+alias @bitmap_set6 = tbmlib_bitmap::@bitmap_set {6};
 
 fn void test_bitmap6() @test {
     BitmapType6 v;
@@ -15,13 +16,13 @@ fn void test_bitmap6() @test {
 
 fn void test_bitmap7() @test {
     BitmapType7 v;
-    assert(@bitmap_set{7, uint, uint}(v, 1) == 2);
-    assert(@bitmap_set{7, uint, uint}(v, 0) == 1);
+    assert(@bitmap_set{7}(v, 1) == 2);
+    assert(@bitmap_set{7}(v, 0) == 1);
 }
 
-alias BitmapType3 = tbmlib::BitmapType {3, uint, uint};
+alias BitmapType3 = tbmlib_bitmap::BitmapType {3};
 fn void test_inl_check() @test {
-    InlStrideType{3, uint, uint} stride = {0b11};
+    InlStrideType{3} stride = {0b11};
     //map == 0b01000101
     BitmapType3 bm = 0b01000000;
 
@@ -34,7 +35,7 @@ fn void test_inl_check() @test {
 }
 
 fn void test_exl_check() @test {
-    StrideType{3, uint, uint} stride = { 0b111 };
+    StrideType{3} stride = { 0b111 };
     BitmapType3 bm = 0b0;
 
     usz? ret = bm.check_exl_bitmap(stride);
