@@ -1,13 +1,13 @@
 module tbmlibtest;
 import tbmlib;
-import tbmlib_common;
-import tbmlib_bitmap;
+import tbmlib::common;
+import tbmlib::bitmap;
 import std::io;
 
-alias BitmapType6 = tbmlib_bitmap::BitmapType {6};
-alias BitmapType7 = tbmlib_bitmap::BitmapType {7};
+alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
+alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
 
-alias @bitmap_set6 = tbmlib_bitmap::@bitmap_set {6};
+alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
 
 fn void test_bitmap6() @test {
     BitmapType6 v;
@@ -20,7 +20,7 @@ fn void test_bitmap7() @test {
     assert(@bitmap_set{7}(v, 0) == 1);
 }
 
-alias BitmapType3 = tbmlib_bitmap::BitmapType {3};
+alias BitmapType3 = tbmlib::bitmap::BitmapType {3};
 fn void test_inl_check() @test {
     InlStrideType{3} stride = {0b11};
     //map == 0b01000101
@@ -40,7 +40,7 @@ fn void test_exl_check() @test {
 
     usz? ret = bm.check_exl_bitmap(stride);
     if (catch e = ret) {
-        assert(e == tbmlib_common::MISSING);
+        assert(e == tbmlib::common::MISSING);
     }
     bm = 0b10000001;
     assert(bm.check_exl_bitmap(stride)!! == 1);

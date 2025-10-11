@@ -1,4 +1,4 @@
-module tbmlib_common;
+module tbmlib::common;
 faultdef MISSING, VALUE_NOT_FOUND;
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
@@ -39,12 +39,12 @@ macro @foreach_1bit(bm; @body(pos)) {
 <*
 @require STRIDE >= 3 && STRIDE <= 7
 *>
-module tbmlib_bitmap {STRIDE};
-import tbmlib_common;
+module tbmlib::bitmap {STRIDE};
+import tbmlib::common;
 import std::io;
 const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
 typedef BitmapType = inline $typefrom(BITMAP_TYPES[STRIDE - 3]);
-alias stride_mask @private = tbmlib_common::stride_mask;
+alias stride_mask @private = tbmlib::common::stride_mask;
 typedef StrideTypeInner = inline char;
 bitstruct StrideType : StrideTypeInner {
     StrideTypeInner val : 0 .. STRIDE - 1;
@@ -115,7 +115,7 @@ fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
     if (check != 0) {
         return BITMAP_WIDTH - 1 - (usz)check.clz();
     }
-    return tbmlib_common::MISSING?;
+    return tbmlib::common::MISSING?;
 }
 
 fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
@@ -123,7 +123,7 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
     if (check != 0) {
         return (usz)self.count_bits(prefix.val);
     }
-    return tbmlib_common::MISSING?;
+    return tbmlib::common::MISSING?;
 }
 
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
@@ -147,20 +147,20 @@ fn void InlStrideType.from(&self, StrideType stride) {
 *>
 module tbmlib {STRIDE, KeyType, ValueType};
 import std::io;
-import tbmlib_common;
-import tbmlib_bitmap;
+import tbmlib::common;
+import tbmlib::bitmap;
 
-alias @remove_wildcard @private = tbmlib_common::@remove_wildcard;
-alias stride_mask @private = tbmlib_common::stride_mask;
+alias @remove_wildcard @private = tbmlib::common::@remove_wildcard;
+alias stride_mask @private = tbmlib::common::stride_mask;
 
-alias BITMAP_WIDTH @private = tbmlib_bitmap::BITMAP_WIDTH {STRIDE};
-alias INL_STRIDE @private = tbmlib_bitmap::INL_STRIDE {STRIDE};
-alias INL_CHECK_MAP @private = tbmlib_bitmap::INL_CHECK_MAP {STRIDE};
-alias @bitmap_set @private = tbmlib_bitmap::@bitmap_set {STRIDE};
-alias @inl_bitpos @private = tbmlib_bitmap::@inl_bitpos {STRIDE};
-alias BitmapType @private = tbmlib_bitmap::BitmapType {STRIDE};
-alias StrideType @private = tbmlib_bitmap::StrideType {STRIDE};
-alias InlStrideType @private = tbmlib_bitmap::InlStrideType {STRIDE};
+alias BITMAP_WIDTH @private = tbmlib::bitmap::BITMAP_WIDTH {STRIDE};
+alias INL_STRIDE @private = tbmlib::bitmap::INL_STRIDE {STRIDE};
+alias INL_CHECK_MAP @private = tbmlib::bitmap::INL_CHECK_MAP {STRIDE};
+alias @bitmap_set @private = tbmlib::bitmap::@bitmap_set {STRIDE};
+alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
+alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
+alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
+alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
 
 
 
@@ -339,7 +339,7 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
         self.internal = internal;
     }
 }
-<* @require tbmlib_common::@cidr_valid(prefix)
+<* @require tbmlib::common::@cidr_valid(prefix)
 *>
 fn void? TbmNode.insert(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     if (prefix.cidr >= STRIDE) {
@@ -387,11 +387,11 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
         }
     }
 
-    return tbmlib_common::VALUE_NOT_FOUND?;
+    return tbmlib::common::VALUE_NOT_FOUND?;
 }
 
 alias Iterator = fn void(Cidr* cidr, ValueType *value, void *aux);
-alias @foreach_1bit = tbmlib_common::@foreach_1bit;
+alias @foreach_1bit = tbmlib::common::@foreach_1bit;
 
 fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
     @foreach_1bit(self.internal; uint pos) {
