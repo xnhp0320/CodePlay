@@ -2,6 +2,7 @@ module tbmlibtest;
 import tbmlib;
 import tbmlib::common;
 import tbmlib::bitmap;
+import tbmlib::cidr;
 import std::io;
 
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
@@ -47,14 +48,16 @@ fn void test_exl_check() @test {
 }
 
 fn void test_value_insert3() @test {
-    TbmNode{3, uint, uint} root;
-    TempTbmAllocator{3, uint, uint} alloc;
-    Cidr{3, uint, uint} cidr = {.ip = 0, .cidr = 3 };
+    //define a Tbm to instantiate the code to make TbmNode.insert {3, uint, uint} works!
+    Tbm{3, uint, uint} tbm;
+    TbmNode{3} root;
+    TempTbmAllocator{3} alloc;
+    Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
     @pool() {
         root.insert(&alloc, cidr, 1)!!;
         assert(root.external == 0b1);
         assert(root.internal == 0b0);
-        TbmNode{3, uint, uint} *next = root.next;
+        TbmNode{3} *next = root.next;
         assert(next.internal == 0b1);
         assert(next.external == 0b0);
         assert(*next.get_value(0) == 1);
@@ -71,7 +74,7 @@ fn void test_value_insert3() @test {
         cidr = {.ip = 0xe0000000, .cidr = 6 };
         root.insert(&alloc, cidr, 3)!!;
         assert(root.external == 0b10000001);
-        next = (TbmNode{3, uint, uint}*)root.next + 1;
+        next = (TbmNode{3}*)root.next + 1;
         assert(next.external == 0b1);
         assert(next.internal == 0b0);
         next = next.next;
@@ -91,7 +94,7 @@ fn void test_value_insert3() @test {
 }
 
 fn void test_cidr_print() @test {
-    Cidr {3, uint, uint} cidr = {.ip = 0, .cidr = 3};
+    Cidr {uint} cidr = {.ip = 0, .cidr = 3};
     @pool() {
         DString out = dstring::new(tmem, "");
         io::fprintf(&out, "%s", cidr)!!;
@@ -104,16 +107,12 @@ macro @output(#cidr, #value, #aux) @local {
     str.appendf("%s -> %d\n", *#cidr, *#value);
 }
 
-fn void output_3(Cidr{3, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
-fn void output_4(Cidr{4, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
-fn void output_5(Cidr{5, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
-fn void output_6(Cidr{6, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
-fn void output_7(Cidr{7, uint, uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
+fn void output(Cidr{uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
 
 macro gen_iterate_test($s) {
-    TbmNode{$s, uint, uint} root;
-    TempTbmAllocator{$s, uint, uint} alloc;
-    Cidr{$s, uint, uint} cidr = {.ip = 0, .cidr = 3 };
+    TbmNode{$s} root;
+    TempTbmAllocator{$s} alloc;
+    Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
 
     @pool() {
         DString out = dstring::new(tmem, "");
@@ -125,7 +124,7 @@ macro gen_iterate_test($s) {
         cidr = {.ip = 0xc0000000, .cidr = 2};
         root.insert(&alloc, cidr, 4)!!;
         cidr = {};
-        root.iterate(&cidr, 0, &$eval(@sprintf("output_%s", $s)), (void*)&out);
+        root.iterate(&cidr, 0, &output, (void*)&out);
         Splitter split = out.str_view().tokenize_all("\n");
         //TODO: need to sort the splitter and make the result consistent with all stride.
         assert(split.next()!! == "0xc0000000/2 -> 4");
@@ -142,5 +141,6 @@ macro @gen_tests(#test) {
 }
 
 fn void test_iterate() @test {
+    Tbm{3, uint, uint} tbm;
     @gen_tests(gen_iterate_test);
 }

@@ -140,6 +140,55 @@ fn void InlStrideType.from(&self, StrideType stride) {
     *self = { stride.val >> 1 };
 }
 
+//Tree bitmap Node def
+struct TbmNode {
+    BitmapType external;
+    bitstruct : BitmapType {
+        BitmapType internal : 0 .. BITMAP_WIDTH - 2;
+    }
+    void *next;
+}
+
+fn TbmNode* TbmNode.next_exl(&self, StrideType stride) {
+    usz offset = self.external.check_exl_bitmap(stride)!!;
+    return (TbmNode*)self.next + offset;
+}
+
+fn usz TbmNode.count_exl_nodes(&self) {
+    return (usz)self.external.popcount();
+}
+
+typedef TrivalAllocator (TbmAllocator) = uptr;
+fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return calloc(nodes_count * TbmNode.sizeof);
+}
+fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
+    return free(ptr);
+}
+
+typedef TempTbmAllocator (TbmAllocator) = uptr;
+fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return tcalloc(nodes_count * TbmNode.sizeof);
+}
+
+fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
+
+}
+
+
+module tbmlib::cidr {KeyType};
+import std::io;
+
+struct Cidr (Printable) {
+    KeyType ip;
+    uint cidr;
+}
+
+fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
+    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
+    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
+}
+
 <*
 @require STRIDE >= 3 && STRIDE <= 7
 @require KeyType.sizeof <= 16
@@ -161,47 +210,12 @@ alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
 alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
 alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
 alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
+alias Cidr @private = tbmlib::cidr::Cidr {KeyType};
+alias TbmNode @private = tbmlib::bitmap::TbmNode {STRIDE};
 
-
-
-struct Cidr (Printable) {
-    KeyType ip;
-    uint cidr;
-}
-
-fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
-    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
-    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
-}
-
-
-//Tree bitmap Node def
-struct TbmNode {
-    BitmapType external;
-    bitstruct : BitmapType {
-        BitmapType internal : 0 .. BITMAP_WIDTH - 2;
-    }
-    void *next;
-}
-
-typedef TrivalAllocator (TbmAllocator) = uptr;
-fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return calloc(nodes_count * TbmNode.sizeof);
-}
-fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
-    return free(ptr);
-}
-
-typedef TempTbmAllocator (TbmAllocator) = uptr;
-fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
-    return tcalloc(nodes_count * TbmNode.sizeof);
-}
-
-fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
-
-}
 
 const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
+$assert(TbmNode.sizeof >= ValueType.sizeof);
 
 struct TbmValueNode {
     ValueType[ROUTE_NUM] values;
@@ -238,18 +252,9 @@ macro StrideType.@from_key(&self, KeyType #ip) {
     #ip <<= STRIDE;
 }
 
-fn TbmNode* TbmNode.next_exl(&self, StrideType stride) {
-    usz offset = self.external.check_exl_bitmap(stride)!!;
-    return (TbmNode*)self.next + offset;
-}
-
 fn usz TbmNode.count_inl_nodes(&self) {
     usz count = (usz)self.internal.popcount();
     return count == 0 ? 0 : (count + ROUTE_NUM) / ROUTE_NUM;
-}
-
-fn usz TbmNode.count_exl_nodes(&self) {
-    return (usz)self.external.popcount();
 }
 
 fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType stride) {
@@ -271,7 +276,11 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
     return new_after - 1;
 }
 
-fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, uint v) {
+
+
+
+
+fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, KeyType v) {
     StrideType stride @noinit;
     stride.@from(&prefix);
     BitmapType external = self.external;
