@@ -36,6 +36,7 @@ macro @foreach_1bit(bm; @body(pos)) {
         bm = bm & (bm - 1);
     }
 }
+
 <*
 @require STRIDE >= 3 && STRIDE <= 7
 *>
@@ -126,14 +127,18 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
     return tbmlib::common::MISSING?;
 }
 
+macro @shift_cidr(#cidr) {
+    #cidr.ip <<= STRIDE;
+    #cidr.cidr -= STRIDE;
+}
+
 <* @require $defined(#cidr.ip) && $defined(#cidr.cidr) : `Expect anything with .ip and .cidr is defined`
    @require $typeof(#cidr).kindof == TypeKind.POINTER
    @require #cidr.cidr >= STRIDE
 *>
-macro StrideType.@from(&self, #cidr) {
-    *self = {(StrideTypeInner)((#cidr.ip & stride_mask($typeof(#cidr.ip), STRIDE)) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
-    #cidr.ip <<= STRIDE;
-    #cidr.cidr -= STRIDE;
+macro StrideType @cidr_shift(#cidr) {
+    defer @shift_cidr(#cidr);
+    return {(StrideTypeInner) ((#cidr.ip & stride_mask($typeof(#cidr.ip), STRIDE)) >> ($typeof(#cidr.ip).sizeof * 8 - STRIDE))};
 }
 
 fn void InlStrideType.from(&self, StrideType stride) {
@@ -210,9 +215,10 @@ alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
 alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
 alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
 alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
+alias StrideTypeInner @private = tbmlib::bitmap::StrideTypeInner {STRIDE};
 alias Cidr @private = tbmlib::cidr::Cidr {KeyType};
 alias TbmNode @private = tbmlib::bitmap::TbmNode {STRIDE};
-
+alias @cidr_shift @private = tbmlib::bitmap::@cidr_shift {STRIDE};
 
 const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
 $assert(TbmNode.sizeof >= ValueType.sizeof);
@@ -247,9 +253,9 @@ struct Tbm {
     TbmAllocator alloc;
 }
 
-macro StrideType.@from_key(&self, KeyType #ip) {
-    *self = {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
-    #ip <<= STRIDE;
+macro StrideType @key_shift(KeyType #ip) {
+    defer #ip <<= STRIDE;
+    return {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
 }
 
 fn usz TbmNode.count_inl_nodes(&self) {
@@ -276,13 +282,8 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
     return new_after - 1;
 }
 
-
-
-
-
 fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, KeyType v) {
-    StrideType stride @noinit;
-    stride.@from(&prefix);
+    StrideType stride = @cidr_shift(&prefix);
     BitmapType external = self.external;
     //in case uint128, we have to cast to usz.
     usz prev_count = (usz)external.popcount();
@@ -375,7 +376,7 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
     StrideType stride @noinit;
 
     while(1) {
-        stride.@from_key(ip);
+        stride = @key_shift(ip);
         if (try offset = node.external.check_exl_bitmap(stride)) {
             cache[cache_idx ++] = {node, stride};
             node = (TbmNode *)node.next;
@@ -433,4 +434,8 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
 fn void Tbm.iterate(&self, Iterator f, void *aux) {
     Cidr cidr;
     self.root.iterate(&cidr, 0, f, aux);
+}
+
+fn void? Tbm.remove(&self, TbmAllocator alloc, Cidr prefix) {
+
 }
