@@ -569,7 +569,6 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
         if (prev_count == post_count) {
             self.remove_value_inplace(pos);
             self.internal = internal;
-            return false;
         } else {
             void *ptr = (TbmValueNode*)self.next - prev_count;
             usz exl_nodes = self.count_exl_nodes();
@@ -581,8 +580,8 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
             self.internal = internal;
             alloc.free(ptr);
             self.next = new_exl;
-            return self.empty_node();
         }
+        return self.empty_node();
     }
 }
 
