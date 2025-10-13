@@ -4,6 +4,9 @@ import tbmlib::common;
 import tbmlib::bitmap;
 import tbmlib::cidr;
 import std::io;
+import std::collections::list;
+import std::sort::is;
+import std::math;
 
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
 alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
@@ -109,7 +112,21 @@ macro @output(#cidr, #value, #aux) @local {
 
 fn void output(Cidr{uint}* cidr, uint *value, void *aux) @local => @output(cidr, value, aux);
 
+
+fn int stringcmp(String a, String b) {
+    int res;
+    foreach (i, c : a[:math::min(a.len, b.len)]) {
+        if (c > b[i]) {
+            return 1;
+        } else if (c < b[i]) {
+            return -1;
+        }
+    }
+    return compare_to(a.len, b.len);
+}
+
 macro gen_iterate_test($s) {
+    { Tbm{$s, uint, uint} tbm; }
     TbmNode{$s} root;
     TempTbmAllocator{$s} alloc;
     Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
@@ -127,20 +144,27 @@ macro gen_iterate_test($s) {
         root.iterate(&cidr, 0, &output, (void*)&out);
         Splitter split = out.str_view().tokenize_all("\n");
         //TODO: need to sort the splitter and make the result consistent with all stride.
-        assert(split.next()!! == "0xc0000000/2 -> 4");
-        assert(split.next()!! == "0x00000000/3 -> 1");
-        assert(split.next()!! == "0x00000000/6 -> 2");
-        assert(split.next()!! == "0xe0000000/6 -> 3");
+        List{String} retlist;
+        retlist.tinit();
+        retlist.push(split.next()!!.tcopy());
+        retlist.push(split.next()!!.tcopy());
+        retlist.push(split.next()!!.tcopy());
+        retlist.push(split.next()!!.tcopy());
+        sort::insertionsort(&retlist, &stringcmp);
+
+        assert(retlist[0] == "0x00000000/3 -> 1");
+        assert(retlist[1] == "0x00000000/6 -> 2");
+        assert(retlist[2] == "0xc0000000/2 -> 4");
+        assert(retlist[3] == "0xe0000000/6 -> 3");
     };
 }
 
 macro @gen_tests(#test) {
-    //$for var $s = 3; $s <= 7; $s++:
-    #test(3);
-    //$endfor;
+    $for var $s = 3; $s <= 7; $s++:
+        #test($s);
+    $endfor;
 }
 
 fn void test_iterate() @test {
-    Tbm{3, uint, uint} tbm;
     @gen_tests(gen_iterate_test);
 }

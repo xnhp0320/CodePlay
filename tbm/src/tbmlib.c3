@@ -370,13 +370,13 @@ fn void TbmNode.insert_value(&self, TbmValueNode *new, usz pos, ValueType v) {
 
 fn void TbmNode.insert_value_inplace(&self, usz pos, ValueType v) {
     TbmValueIter iter = ((TbmValueNode*)self.next).values_iter();
-    uint tot_values = self.internal.popcount();
+    uint tot_values = (uint)self.internal.popcount();
     //move to the end position.
     iter.moveto(tot_values);
     //shift [pos+1, end] for 1 place.
     uint i = 0;
-    assert(tot_values >= self.internal.count_bits(pos));
-    uint shift = tot_values - self.internal.count_bits(pos);
+    assert(tot_values >= (uint)self.internal.count_bits(pos));
+    uint shift = tot_values - (uint)self.internal.count_bits(pos);
     while (i < shift) {
         ValueType *_v = iter.get();
         *_v = *iter.prev();
@@ -497,7 +497,7 @@ fn void TbmNode.remove_value_inplace(&self, uint pos) {
     TbmValueIter iter = node.values_iter();
     iter.moveto(pos);
     usz tot_values = (usz)self.internal.popcount();
-    usz shift = tot_values - self.internal.count_bits(pos) - 1;
+    usz shift = tot_values - (usz)self.internal.count_bits(pos) - 1;
     usz i = 0;
     while (i < shift) {
         ValueType *_v = iter.get();
