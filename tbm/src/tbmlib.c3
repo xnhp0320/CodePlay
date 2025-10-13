@@ -257,6 +257,10 @@ fn TbmValueIter TbmValueNode.values_iter(&self) {
     return { self - 1, 0 };
 }
 
+fn ValueType *TbmValueIter.get(&self) {
+    return &self.node.values[self.inside_idx];
+}
+
 fn ValueType *TbmValueIter.next(&self) {
     uint *ret = &self.node.values[self.inside_idx];
     self.inside_idx ++;
@@ -265,6 +269,23 @@ fn ValueType *TbmValueIter.next(&self) {
         self.inside_idx = 0;
     }
     return ret;
+}
+
+fn ValueType *TbmValueIter.prev(&self) {
+    if (self.inside_idx == 0) {
+        self.node ++;
+        self.inside_idx = ROUTE_NUM;
+    }
+    return &self.node.values[--self.inside_idx];
+}
+
+fn ValueType *TbmValueIter.moveto(&self, uint pos) {
+    uint i = 0;
+    while (i < pos) {
+        self.next();
+        i ++;
+    }
+    return self.get();
 }
 
 struct Tbm {
@@ -323,13 +344,13 @@ fn ValueType* TbmNode.get_value(&self, usz pos) {
     return &node.values[offset % ROUTE_NUM];
 }
 
-fn void TbmNode.insert_value(&self, TbmValueNode *new, TbmValueNode *old,
-                             usz pos, ValueType v) {
+fn void TbmNode.insert_value(&self, TbmValueNode *new, usz pos, ValueType v) {
     TbmValueIter new_iter = new.values_iter();
-    if (old == null) {
+    if (self.next == null) {
         *new_iter.next() = v;
         return;
     }
+    TbmValueNode *old = self.next;
 
     usz tot_count = (usz)self.internal.popcount();
     usz before_count = (usz)self.internal.count_bits(pos);
@@ -347,6 +368,24 @@ fn void TbmNode.insert_value(&self, TbmValueNode *new, TbmValueNode *old,
     }
 }
 
+fn void TbmNode.insert_value_inplace(&self, usz pos, ValueType v) {
+    TbmValueIter iter = ((TbmValueNode*)self.next).values_iter();
+    uint tot_values = self.internal.popcount();
+    //move to the end position.
+    iter.moveto(tot_values);
+    //shift [pos+1, end] for 1 place.
+    uint i = 0;
+    assert(tot_values >= self.internal.count_bits(pos));
+    uint shift = tot_values - self.internal.count_bits(pos);
+    while (i < shift) {
+        ValueType *_v = iter.get();
+        *_v = *iter.prev();
+        i++;
+    }
+
+    *iter.get() = v;
+}
+
 fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     usz prev_count = self.count_inl_nodes();
     BitmapType internal = self.internal;
@@ -354,19 +393,17 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
     internal = @bitmap_set(internal, pos);
     usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
     if (post_count == prev_count) {
-        ValueType *value = self.get_value(pos);
-        //update
-        *value = v;
+        self.insert_value_inplace(pos, v);
     } else {
         usz exl_nodes = self.count_exl_nodes();
         void *new_nodes = alloc.alloc(post_count + exl_nodes)!;
         void *new_exl = (TbmNode*)new_nodes + post_count;
         mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
-        self.insert_value(new_exl, self.next, pos, v);
+        self.insert_value(new_exl, pos, v);
         alloc.free((TbmValueNode*)self.next - prev_count);
         self.next = new_exl;
-        self.internal = internal;
     }
+    self.internal = internal;
 }
 <* @require tbmlib::common::@cidr_valid(prefix)
 *>
@@ -455,11 +492,26 @@ fn void Tbm.iterate(&self, Iterator f, void *aux) {
     self.root.iterate(&cidr, 0, f, aux);
 }
 
-fn void TbmNode.remove_value(&self, TbmValueNode *new, TbmValueNode *old, uint pos)
+fn void TbmNode.remove_value_inplace(&self, uint pos) {
+    TbmValueNode *node = self.next;
+    TbmValueIter iter = node.values_iter();
+    iter.moveto(pos);
+    usz tot_values = (usz)self.internal.popcount();
+    usz shift = tot_values - self.internal.count_bits(pos) - 1;
+    usz i = 0;
+    while (i < shift) {
+        ValueType *_v = iter.get();
+        *_v = *iter.next();
+        i ++;
+    }
+}
+
+fn void TbmNode.remove_value(&self, TbmValueNode *new, uint pos)
 {
     if (new == null) {
         return;
     }
+    TbmValueNode *old = self.next;
     TbmValueIter new_iter = new.values_iter();
     TbmValueIter old_iter = old.values_iter();
 
@@ -515,6 +567,7 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
         usz prev_count = self.count_inl_nodes();
         usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
         if (prev_count == post_count) {
+            self.remove_value_inplace(pos);
             self.internal = internal;
             return false;
         } else {
@@ -523,7 +576,7 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
             void *new_nodes = alloc.alloc(exl_nodes + post_count)!;
             void *new_exl = (TbmNode*)new_nodes + post_count;
             mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
-            self.remove_value(new_exl, self.next, pos);
+            self.remove_value(new_exl, pos);
 
             self.internal = internal;
             alloc.free(ptr);
