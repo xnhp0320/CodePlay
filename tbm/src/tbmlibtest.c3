@@ -51,16 +51,14 @@ fn void test_exl_check() @test {
 }
 
 fn void test_value_insert3() @test {
-    //define a Tbm to instantiate the code to make TbmNode.insert {3, uint, uint} works!
-    Tbm{3, uint, uint} tbm;
-    TbmNode{3} root;
-    TempTbmAllocator{3} alloc;
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
     Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
     @pool() {
         root.insert(&alloc, cidr, 1)!!;
         assert(root.external == 0b1);
         assert(root.internal == 0b0);
-        TbmNode{3} *next = root.next;
+        TbmNode{3, uint, uint} *next = root.next;
         assert(next.internal == 0b1);
         assert(next.external == 0b0);
         assert(*next.get_value(0) == 1);
@@ -77,7 +75,7 @@ fn void test_value_insert3() @test {
         cidr = {.ip = 0xe0000000, .cidr = 6 };
         root.insert(&alloc, cidr, 3)!!;
         assert(root.external == 0b10000001);
-        next = (TbmNode{3}*)root.next + 1;
+        next = (TbmNode{3, uint, uint}*)root.next + 1;
         assert(next.external == 0b1);
         assert(next.internal == 0b0);
         next = next.next;
@@ -126,9 +124,8 @@ fn int stringcmp(String a, String b) {
 }
 
 macro gen_iterate_test($s) {
-    { Tbm{$s, uint, uint} tbm; }
-    TbmNode{$s} root;
-    TempTbmAllocator{$s} alloc;
+    TbmNode{$s, uint, uint} root;
+    TempTbmAllocator{$s, uint, uint} alloc;
     Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
 
     @pool() {
@@ -146,10 +143,10 @@ macro gen_iterate_test($s) {
         //TODO: need to sort the splitter and make the result consistent with all stride.
         List{String} retlist;
         retlist.tinit();
-        retlist.push(split.next()!!.tcopy());
-        retlist.push(split.next()!!.tcopy());
-        retlist.push(split.next()!!.tcopy());
-        retlist.push(split.next()!!.tcopy());
+        retlist.push(split.next()!!);
+        retlist.push(split.next()!!);
+        retlist.push(split.next()!!);
+        retlist.push(split.next()!!);
         sort::insertionsort(&retlist, &stringcmp);
 
         assert(retlist[0] == "0x00000000/3 -> 1");

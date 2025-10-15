@@ -153,6 +153,45 @@ macro StrideType @cidr_shift(#cidr) {
 fn void InlStrideType.from(&self, StrideType stride) {
     *self = { stride.val >> 1 };
 }
+module tbmlib::cidr {KeyType};
+import std::io;
+
+struct Cidr (Printable) {
+    KeyType ip;
+    uint cidr;
+}
+
+fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
+    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
+    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
+}
+
+<*
+@require STRIDE >= 3 && STRIDE <= 7
+@require KeyType.sizeof <= 16
+@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
+*>
+module tbmlib {STRIDE, KeyType, ValueType};
+import std::io;
+import tbmlib::common;
+import tbmlib::bitmap;
+
+alias @remove_wildcard @private = tbmlib::common::@remove_wildcard;
+alias stride_mask @private = tbmlib::common::stride_mask;
+
+alias BITMAP_WIDTH @private = tbmlib::bitmap::BITMAP_WIDTH {STRIDE};
+alias INL_STRIDE @private = tbmlib::bitmap::INL_STRIDE {STRIDE};
+alias INL_CHECK_MAP @private = tbmlib::bitmap::INL_CHECK_MAP {STRIDE};
+alias @bitmap_set @private = tbmlib::bitmap::@bitmap_set {STRIDE};
+alias @bitmap_check @private = tbmlib::bitmap::@bitmap_check {STRIDE};
+alias @bitmap_clear @private = tbmlib::bitmap::@bitmap_clear {STRIDE};
+alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
+alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
+alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
+alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
+alias StrideTypeInner @private = tbmlib::bitmap::StrideTypeInner {STRIDE};
+alias Cidr @private = tbmlib::cidr::Cidr {KeyType};
+alias @cidr_shift @private = tbmlib::bitmap::@cidr_shift {STRIDE};
 
 //Tree bitmap Node def
 struct TbmNode {
@@ -196,48 +235,6 @@ fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
 fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
 
 }
-
-
-module tbmlib::cidr {KeyType};
-import std::io;
-
-struct Cidr (Printable) {
-    KeyType ip;
-    uint cidr;
-}
-
-fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
-    var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
-    return f.printf($fmt +++ "/%d", self.ip, self.cidr);
-}
-
-<*
-@require STRIDE >= 3 && STRIDE <= 7
-@require KeyType.sizeof <= 16
-@require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
-*>
-module tbmlib {STRIDE, KeyType, ValueType};
-import std::io;
-import tbmlib::common;
-import tbmlib::bitmap;
-
-alias @remove_wildcard @private = tbmlib::common::@remove_wildcard;
-alias stride_mask @private = tbmlib::common::stride_mask;
-
-alias BITMAP_WIDTH @private = tbmlib::bitmap::BITMAP_WIDTH {STRIDE};
-alias INL_STRIDE @private = tbmlib::bitmap::INL_STRIDE {STRIDE};
-alias INL_CHECK_MAP @private = tbmlib::bitmap::INL_CHECK_MAP {STRIDE};
-alias @bitmap_set @private = tbmlib::bitmap::@bitmap_set {STRIDE};
-alias @bitmap_check @private = tbmlib::bitmap::@bitmap_check {STRIDE};
-alias @bitmap_clear @private = tbmlib::bitmap::@bitmap_clear {STRIDE};
-alias @inl_bitpos @private = tbmlib::bitmap::@inl_bitpos {STRIDE};
-alias BitmapType @private = tbmlib::bitmap::BitmapType {STRIDE};
-alias StrideType @private = tbmlib::bitmap::StrideType {STRIDE};
-alias InlStrideType @private = tbmlib::bitmap::InlStrideType {STRIDE};
-alias StrideTypeInner @private = tbmlib::bitmap::StrideTypeInner {STRIDE};
-alias Cidr @private = tbmlib::cidr::Cidr {KeyType};
-alias TbmNode @private = tbmlib::bitmap::TbmNode {STRIDE};
-alias @cidr_shift @private = tbmlib::bitmap::@cidr_shift {STRIDE};
 
 const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
 $assert(TbmNode.sizeof >= ValueType.sizeof);
