@@ -548,6 +548,8 @@ fn void? TbmNode.remove_exl_node(&self, TbmAllocator alloc, StrideType stride) {
     self.next = new_node + tot_inl_count;
 }
 
+<* @require tbmlib::common::@cidr_valid(prefix)
+*>
 fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
     if (prefix.cidr >= STRIDE) {
         StrideType stride = @cidr_shift(&prefix);
