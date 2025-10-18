@@ -443,3 +443,60 @@ fn void test_remove_exl() @test {
         assert(vnode.values[0] == 3);
     };
 }
+
+fn void test_del_all() @test {
+
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+
+        Cidr{uint} cidr = {.ip = 0x2000_0000, .cidr = 3};
+        //0b001/3 -> 6
+        root.insert(&alloc, cidr, 6)!!;
+
+        //0b000/3 -> 1
+        cidr = {.ip = 0, .cidr = 3 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b000000/6 -> 2
+        cidr = {.ip = 0, .cidr = 6 };
+        root.insert(&alloc, cidr, 2)!!;
+
+        //0b11/2 -> 4
+        cidr = {.ip = 0xc0000000, .cidr = 2};
+        root.insert(&alloc, cidr, 4)!!;
+
+        //0b1/1 -> 5
+        cidr = {.ip = 0x80000000, .cidr = 1};
+        root.insert(&alloc, cidr, 5)!!;
+
+        //0b111000/6 -> 3
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        cidr = {.ip = 0x2000_0000, .cidr = 3};
+        root.remove(&alloc, cidr)!!;
+
+        cidr = {.ip = 0, .cidr = 3 };
+        root.remove(&alloc, cidr)!!;
+
+        cidr = {.ip = 0, .cidr = 6 };
+        root.remove(&alloc, cidr)!!;
+
+        cidr = {.ip = 0xc0000000, .cidr = 2};
+        root.remove(&alloc, cidr)!!;
+
+        cidr = {.ip = 0x80000000, .cidr = 1};
+        root.remove(&alloc, cidr)!!;
+
+        //0b111000/6 -> 3
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.remove(&alloc, cidr)!!;
+
+        assert(root.external == 0);
+        assert(root.internal == 0);
+        assert(root.next == null);
+    };
+}

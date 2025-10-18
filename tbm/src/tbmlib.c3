@@ -535,11 +535,13 @@ fn void? TbmNode.remove_exl_node(&self, TbmAllocator alloc, StrideType stride) {
 
     TbmNode *new_node = alloc.alloc(tot_exl_count + tot_inl_count - 1)!;
     TbmNode *copy_start = (TbmNode *)self.next - tot_inl_count;
-    mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode.sizeof);
 
-    copy_start += tot_inl_count + before_exl_count + 1;
-    TbmNode *new_after = new_node + tot_inl_count + before_exl_count;
-    mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count - 1) * TbmNode.sizeof);
+    if (new_node) {
+        mem::copy(new_node, copy_start, (tot_inl_count + before_exl_count) * TbmNode.sizeof);
+        copy_start += tot_inl_count + before_exl_count + 1;
+        TbmNode *new_after = new_node + tot_inl_count + before_exl_count;
+        mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count - 1) * TbmNode.sizeof);
+    }
 
     self.external = @bitmap_clear(self.external, stride.val);
     alloc.free((TbmValueNode*)self.next - tot_inl_count);
