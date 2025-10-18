@@ -492,13 +492,14 @@ fn void Tbm.iterate(&self, Iterator f, void *aux) {
 fn void TbmNode.remove_value_inplace(&self, uint pos) {
     TbmValueNode *node = self.next;
     TbmValueIter iter = node.values_iter();
-    iter.moveto(pos);
+    iter.moveto((uint)(self.internal.count_bits(pos)));
     usz tot_values = (usz)self.internal.popcount();
     usz shift = tot_values - (usz)self.internal.count_bits(pos) - 1;
     usz i = 0;
     while (i < shift) {
         ValueType *_v = iter.get();
-        *_v = *iter.next();
+        iter.next();
+        *_v = *iter.get();
         i ++;
     }
 }

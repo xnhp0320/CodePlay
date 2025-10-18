@@ -42,10 +42,7 @@ fn void test_exl_check() @test {
     StrideType{3} stride = { 0b111 };
     BitmapType3 bm = 0b0;
 
-    usz? ret = bm.check_exl_bitmap(stride);
-    if (catch e = ret) {
-        assert(e == tbmlib::common::MISSING);
-    }
+    assert(@catch(bm.check_exl_bitmap(stride)) == tbmlib::common::MISSING);
     bm = 0b10000001;
     assert(bm.check_exl_bitmap(stride)!! == 1);
 }
@@ -126,19 +123,37 @@ fn int stringcmp(String a, String b) {
 macro gen_iterate_test($s) {
     TbmNode{$s, uint, uint} root;
     TempTbmAllocator{$s, uint, uint} alloc;
-    Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
+    Cidr{uint} cidr = {.ip = 0x20000000, .cidr = 3 };
 
     @pool() {
         DString out = dstring::new(tmem, "");
+
+        //0b001/3 -> 6
+        root.insert(&alloc, cidr, 6)!!;
+
+        //0b000/3 -> 1
+        cidr = {.ip = 0, .cidr = 3 };
         root.insert(&alloc, cidr, 1)!!;
+
+        //0b000000/6 -> 2
         cidr = {.ip = 0, .cidr = 6 };
         root.insert(&alloc, cidr, 2)!!;
-        cidr = {.ip = 0xe0000000, .cidr = 6 };
-        root.insert(&alloc, cidr, 3)!!;
+
+        //0b11/2 -> 4
         cidr = {.ip = 0xc0000000, .cidr = 2};
         root.insert(&alloc, cidr, 4)!!;
+
+        //0b1/1 -> 5
+        cidr = {.ip = 0x80000000, .cidr = 1};
+        root.insert(&alloc, cidr, 5)!!;
+
+        //0b111000/6 -> 3
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.insert(&alloc, cidr, 3)!!;
+
         cidr = {};
         root.iterate(&cidr, 0, &output, (void*)&out);
+
         Splitter split = out.str_view().tokenize_all("\n");
         //TODO: need to sort the splitter and make the result consistent with all stride.
         List{String} retlist;
@@ -147,21 +162,284 @@ macro gen_iterate_test($s) {
         retlist.push(split.next()!!);
         retlist.push(split.next()!!);
         retlist.push(split.next()!!);
+        retlist.push(split.next()!!);
+        retlist.push(split.next()!!);
         sort::insertionsort(&retlist, &stringcmp);
 
         assert(retlist[0] == "0x00000000/3 -> 1");
         assert(retlist[1] == "0x00000000/6 -> 2");
-        assert(retlist[2] == "0xc0000000/2 -> 4");
-        assert(retlist[3] == "0xe0000000/6 -> 3");
+        assert(retlist[2] == "0x20000000/3 -> 6");
+        assert(retlist[3] == "0x80000000/1 -> 5");
+        assert(retlist[4] == "0xc0000000/2 -> 4");
+        assert(retlist[5] == "0xe0000000/6 -> 3");
     };
 }
 
 macro @gen_tests(#test) {
     $for var $s = 3; $s <= 7; $s++:
-        #test($s);
+        { #test($s); }
     $endfor;
 }
 
 fn void test_iterate() @test {
     @gen_tests(gen_iterate_test);
+}
+
+fn void test_add_exl() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+
+        //0b111000/6 -> 3
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b000/3 -> 1
+        cidr = {.ip = 0, .cidr = 3 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b001/3 -> 6
+        cidr = {.ip = 0x20000000, .cidr = 3 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        assert(root.external == 0b1000_0011);
+        TbmNode{3, uint, uint} *next = root.next;
+        assert(next.internal == 0b00000001);
+        TbmValueNode{3, uint, uint} *vnode = next.next;
+        vnode --;
+        assert(vnode.values[0] == 1);
+
+        next += 1;
+        assert(next.internal == 0b0000_0001);
+        vnode = next.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+
+        next += 1;
+        assert(next.internal == 0b0000_0000);
+        assert(next.external == 0b0000_0001);
+        next = next.next;
+        vnode = next.next;
+        vnode --;
+        assert(vnode.values[0] == 3);
+    };
+}
+
+fn void test_add_inl() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+
+        //0b11/2 -> 3
+        cidr = {.ip = 0xc0000000, .cidr = 2 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b00/2 -> 1
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b0/1 -> 6
+        cidr = {.ip = 0x00000000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        assert(root.external == 0b0);
+        assert(root.internal == 0b01001010);
+
+        TbmValueNode{3, uint, uint} *vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 1);
+        assert(vnode.values[2] == 3);
+    };
+
+}
+
+fn void test_add_inl_more() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+
+        //0b11/2 -> 3
+        cidr = {.ip = 0xc0000000, .cidr = 2 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b00/2 -> 1
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b01/2 -> 1
+        cidr = {.ip = 0x4000_0000, .cidr = 2 };
+        root.insert(&alloc, cidr, 7)!!;
+
+        //0b0/1 -> 6
+        cidr = {.ip = 0x00000000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        //0b1/1 -> 8
+        cidr = {.ip = 0x8000_0000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        assert(root.external == 0b0);
+        assert(root.internal == 0b01011110);
+
+        TbmValueNode{3, uint, uint} *vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 6);
+        assert(vnode.values[2] == 1);
+        assert(vnode.values[3] == 7);
+        vnode --;
+        assert(vnode.values[0] == 3);
+    };
+
+}
+
+fn void test_remove_inl() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+
+        //0b11/2 -> 3
+        cidr = {.ip = 0xc0000000, .cidr = 2 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b00/2 -> 1
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b0/1 -> 6
+        cidr = {.ip = 0x00000000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        assert(root.external == 0b0);
+        assert(root.internal == 0b01001010);
+
+        TbmValueNode{3, uint, uint} *vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 1);
+        assert(vnode.values[2] == 3);
+
+        cidr = {.ip = 0, .cidr = 2};
+        root.remove(&alloc, cidr)!!;
+        assert(root.internal == 0b01000010);
+
+        cidr = {.ip = 0, .cidr = 3};
+        assert(@catch(root.remove(&alloc, cidr)) ==  tbmlib::common::PREFIX_NOT_EXIST);
+
+        cidr = {.ip = 0x4000_0000, .cidr = 2};
+        assert(@catch(root.remove(&alloc, cidr)) ==  tbmlib::common::PREFIX_NOT_EXIST);
+
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 3);
+    };
+}
+
+fn void test_remove_inl_more() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+        //0b11/2 -> 3
+        cidr = {.ip = 0xc0000000, .cidr = 2 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b00/2 -> 1
+        cidr = {.ip = 0, .cidr = 2 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b01/2 -> 1
+        cidr = {.ip = 0x4000_0000, .cidr = 2 };
+        root.insert(&alloc, cidr, 7)!!;
+
+        //0b0/1 -> 6
+        cidr = {.ip = 0x00000000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        //0b1/1 -> 8
+        cidr = {.ip = 0x8000_0000, .cidr = 1 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        assert(root.external == 0b0);
+        assert(root.internal == 0b01011110);
+
+        TbmValueNode{3, uint, uint} *vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 6);
+        assert(vnode.values[2] == 1);
+        assert(vnode.values[3] == 7);
+        vnode --;
+        assert(vnode.values[0] == 3);
+
+        cidr = {.ip = 0, .cidr = 2};
+        root.remove(&alloc, cidr)!!;
+        assert(root.internal == 0b01010110);
+
+        cidr = {.ip = 0x8000_0000, .cidr = 2};
+        assert(@catch(root.remove(&alloc, cidr)) == tbmlib::common::PREFIX_NOT_EXIST);
+
+        vnode = root.next;
+        vnode --;
+        assert(vnode.values[0] == 6);
+        assert(vnode.values[1] == 6);
+        assert(vnode.values[2] == 7);
+        assert(vnode.values[3] == 3);
+    };
+}
+
+fn void test_remove_exl() @test {
+    TbmNode{3, uint, uint} root;
+    TempTbmAllocator{3, uint, uint} alloc;
+
+    @pool() {
+        DString out = dstring::new(tmem, "");
+        Cidr{uint} cidr;
+
+        //0b111000/6 -> 3
+        cidr = {.ip = 0xe0000000, .cidr = 6 };
+        root.insert(&alloc, cidr, 3)!!;
+
+        //0b000/3 -> 1
+        cidr = {.ip = 0, .cidr = 3 };
+        root.insert(&alloc, cidr, 1)!!;
+
+        //0b001/3 -> 6
+        cidr = {.ip = 0x20000000, .cidr = 3 };
+        root.insert(&alloc, cidr, 6)!!;
+
+        cidr = {.ip = 0, .cidr = 6};
+        assert(@catch(root.remove(&alloc, cidr)) == tbmlib::common::PREFIX_NOT_EXIST);
+
+        cidr = {.ip = 0x20000000, .cidr = 3 };
+        root.remove(&alloc, cidr)!!;
+
+        assert(root.external == 0b1000_0001);
+        TbmNode{3, uint, uint} *next = root.next;
+        assert(next.internal == 0b0000_0001);
+        TbmValueNode{3, uint, uint} *vnode = next.next;
+        vnode --;
+        assert(vnode.values[0] == 1);
+
+        next += 1;
+        assert(next.internal == 0b0);
+        next = next.next;
+        vnode = next.next;
+        vnode --;
+        assert(vnode.values[0] == 3);
+    };
 }
