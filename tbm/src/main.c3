@@ -1,9 +1,19 @@
 module tbm;
 import tbmlib::bitmap;
+import iprange;
 import std::io;
+
 
 fn int main(String[] args)
 {
-    tbmlib::bitmap::print_inl_check_map{7}(io::stdout());
+    IpRangeList rl;
+    rl.init(mem);
+    iprange::load_rangelist(mem, "ipv4_fib.txt", &rl)!!; 
+    rl.sort();
+
+    foreach(r : rl) {
+        io::printf("%s\n", iprange::cidr_from_iprange(r));
+    }
+
 	return 0;
 }

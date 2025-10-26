@@ -155,6 +155,7 @@ fn void InlStrideType.from(&self, StrideType stride) {
 }
 module tbmlib::cidr {KeyType};
 import std::io;
+import std::net;
 
 struct Cidr (Printable) {
     KeyType ip;
@@ -164,6 +165,20 @@ struct Cidr (Printable) {
 fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
     var $fmt = @sprintf("0x%%0%sx", KeyType.sizeof * 2);
     return f.printf($fmt +++ "/%d", self.ip, self.cidr);
+}
+
+fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint) {
+    assert(addr.is_ipv6 == false);
+    KeyType mask = cidr < KeyType.sizeof * 8 ? KeyType.max << (KeyType.sizeof * 8 - cidr) : 0;
+    self.ip = addr.ip4.val & mask;
+    self.cidr = cidr;
+}
+
+fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
+    assert(addr.is_ipv6 == true);
+    KeyType mask = cidr < KeyType.sizeof * 8 ? KeyType.max << (KeyType.sizeof * 8 - cidr) : 0;
+    self.ip = addr.ip6.val & mask;
+    self.cidr = cidr;
 }
 
 <*
