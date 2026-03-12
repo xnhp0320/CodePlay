@@ -40,7 +40,7 @@ macro @foreach_1bit(bm; @body(pos)) {
 <*
 @require STRIDE >= 3 && STRIDE <= 7
 *>
-module tbmlib::bitmap {STRIDE};
+module tbmlib::bitmap <STRIDE>;
 import tbmlib::common;
 import std::io;
 const typeid[*] BITMAP_TYPES @private = { char, ushort, uint, ulong, uint128 };
@@ -125,7 +125,7 @@ fn usz? BitmapType.check_inl_bitmap(self, InlStrideType prefix) {
     if (check != 0) {
         return BITMAP_WIDTH - 1 - (usz)check.clz();
     }
-    return tbmlib::common::MISSING?;
+    return tbmlib::common::MISSING~;
 }
 
 fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
@@ -133,7 +133,7 @@ fn usz? BitmapType.check_exl_bitmap(self, StrideType prefix) {
     if (check != 0) {
         return (usz)self.count_bits(prefix.val);
     }
-    return tbmlib::common::MISSING?;
+    return tbmlib::common::MISSING~;
 }
 
 macro @shift_cidr(#cidr) {
@@ -153,7 +153,7 @@ macro StrideType @cidr_shift(#cidr) {
 fn void InlStrideType.from(&self, StrideType stride) {
     *self = { stride.val >> 1 };
 }
-module tbmlib::cidr {KeyType};
+module tbmlib::cidr <KeyType>;
 import std::io;
 import std::net;
 
@@ -186,7 +186,7 @@ fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
 @require KeyType.sizeof <= 16
 @require ValueType.sizeof <= 8 : `Too large ValueType, maybe use a pointer?`
 *>
-module tbmlib {STRIDE, KeyType, ValueType};
+module tbmlib <STRIDE, KeyType, ValueType>;
 import std::io;
 import tbmlib::common;
 import tbmlib::bitmap;
@@ -215,6 +215,12 @@ struct TbmNode {
         BitmapType internal : 0 .. BITMAP_WIDTH - 2;
     }
     void *next;
+}
+
+int dummy <STRIDE, KeyType, ValueType> @if(assert_types());
+macro bool assert_types() <STRIDE, KeyType, ValueType> @local {
+    $assert TbmNode.sizeof >= ValueType.sizeof; 
+    return false;
 }
 
 fn TbmNode* TbmNode.next_exl(&self, StrideType stride) {
@@ -252,7 +258,6 @@ fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
 }
 
 const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
-$assert(TbmNode.sizeof >= ValueType.sizeof);
 
 struct TbmValueNode {
     ValueType[ROUTE_NUM] values;
@@ -274,7 +279,7 @@ fn ValueType *TbmValueIter.get(&self) {
 }
 
 fn ValueType *TbmValueIter.next(&self) {
-    uint *ret = &self.node.values[self.inside_idx];
+    ValueType *ret = &self.node.values[self.inside_idx];
     self.inside_idx ++;
     if (self.inside_idx == ROUTE_NUM) {
         self.node --;
@@ -334,7 +339,7 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
     return new_after - 1;
 }
 
-fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, KeyType v) {
+fn void? TbmNode.insert_exl(&self, TbmAllocator alloc, Cidr prefix, ValueType v) {
     StrideType stride = @cidr_shift(&prefix);
     BitmapType external = self.external;
     //in case uint128, we have to cast to usz.
@@ -465,7 +470,7 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
         }
     }
 
-    return tbmlib::common::VALUE_NOT_FOUND?;
+    return tbmlib::common::VALUE_NOT_FOUND~;
 }
 
 alias Iterator = fn void(Cidr* cidr, ValueType *value, void *aux);
@@ -568,7 +573,7 @@ fn void? TbmNode.remove_exl_node(&self, TbmAllocator alloc, StrideType stride) {
 fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
     if (prefix.cidr >= STRIDE) {
         StrideType stride = @cidr_shift(&prefix);
-        TbmNode *next = self.next_exl_check(stride) ?? common::PREFIX_NOT_EXIST?!;
+        TbmNode *next = self.next_exl_check(stride) ?? common::PREFIX_NOT_EXIST~!;
         if (next.remove(alloc, prefix)!) {
             self.remove_exl_node(alloc, stride)!;
             return self.empty_node();
@@ -578,7 +583,7 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
         uint pos = @inl_bitpos(@remove_wildcard(prefix), prefix.cidr);
         BitmapType internal = self.internal;
         if (!@bitmap_check(internal, pos)) {
-            return common::PREFIX_NOT_EXIST?;
+            return common::PREFIX_NOT_EXIST~;
         }
         internal = @bitmap_clear(internal, pos);
         usz prev_count = self.count_inl_nodes();

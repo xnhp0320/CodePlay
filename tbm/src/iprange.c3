@@ -1,12 +1,12 @@
-module iprange;
+module iprange <KeyType>;
 
 import std::collections::range;
 import std::collections::list;
 import tbmlib::cidr;
 import tbmlib::common;
 
-typedef IpRange = inline range::Range {uint};
-alias Cidr @private = cidr::Cidr {uint};
+typedef IpRange = inline range::Range {KeyType};
+alias Cidr @private = cidr::Cidr {KeyType};
 
 <* @require common::@cidr_valid(cidr)
 *>
@@ -14,16 +14,16 @@ fn IpRange iprange_from_cidr(Cidr cidr) {
     IpRange self;
     self.start = cidr.ip;
     if (cidr.cidr < $typeof(cidr.ip).sizeof * 8) {
-        self.end = cidr.ip | ((1u << cidr.cidr) - 1);
+        self.end = cidr.ip | (((KeyType)1 << ($typeof(cidr.ip).sizeof * 8 - cidr.cidr)) - 1);
     } else {
-        self.end = $typeof(cidr.ip).max;
+        self.end = cidr.ip;
     }
 
     return self;
 }
 
 fn Cidr cidr_from_iprange(IpRange r) {
-    return { .ip = r.start, .cidr = (uint)((r.end - r.start).popcount()) };
+    return { .ip = r.start, .cidr = (uint)(KeyType.sizeof * 7 - (r.end - r.start).popcount()) };
 }
 
 alias IpRangeList = List {IpRange};
@@ -31,7 +31,12 @@ alias IpRangeList = List {IpRange};
 import std::io;
 import std::io::file;
 import std::net;
-import std::sort::qs;
+import std::sort;
+import std::collections::priorityqueue;
+
+fn bool IpRange.less(&self, IpRange other) {
+    return self.start < other.start; 
+}
 
 fn void? load_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
     File f = file::open(filename, "r")!;
@@ -55,105 +60,122 @@ fn void? load_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
     }
 }
 
-fn int range_start_cmp(IpRange a, IpRange b) {
-    return a.start >= b.start ? 1 : -1;
+alias IdxList = List {uint};
+
+fn uint IdxList.pick_winner(&self, IpRangeList *rl) {
+    uint prefixlen = cidr_from_iprange(rl.[0]).cidr;
+    uint winner = self.[0];
+    foreach (idx : self.array_view()[1 .. ]) {
+        Cidr c = cidr_from_iprange(rl.[idx]);
+        if (c.cidr > prefixlen) {
+            winner = idx;
+        }
+    }
+    return winner;
 }
 
-fn int range_end_cmp(IpRange a, IpRange b) {
-    return a.end >= b.end ? 1 : -1;
+struct Seg (Printable) {
+    IpRange r;
+    uint idx; //points to the original IpRangeList.
 }
 
-fn void IpRangeList.sort(&self) {
-    quicksort(self, &range_start_cmp);
-    usz idx = 0;
-    usz begin = 0;
-    while (idx < self.size) {
-        if (self.get(begin).start != self.get(idx).start) {
+fn bool Seg.equals(self, Seg other) @operator(==) {
+    return self.r.start == other.r.start && self.r.end == other.r.end && self.idx == other.idx;
+}
 
-            if (idx - begin > 1) {
-                quicksort(self.entries[begin .. idx - 1], &range_end_cmp);
+fn usz? Seg.to_format(&self, Formatter *f) @dynamic {
+    return f.printf("[%x %x] %s\n", self.r.start, self.r.end, self.idx);
+}
+
+struct HeapItem {
+    KeyType end;
+    uint idx;
+}
+
+fn bool HeapItem.less(&self, HeapItem other) {
+    return self.end < other.end;
+}
+
+alias Heap = PriorityQueue {HeapItem};
+alias SegList = List {Seg};
+
+fn SegList? IpRangeList.build_segs(&self) {
+
+    quicksort(self);
+    List{uint} in_heap;
+    in_heap.init(mem);
+    defer in_heap.free();
+
+    Heap h;
+    h.init(mem);
+    defer h.free();
+
+    h.push({self.[0].end, 0});
+    KeyType start = self.[0].start;
+    in_heap.push(0);
+
+    SegList sg_list;
+    sg_list.init(mem);
+
+    uint idx = 1;
+    while OUTER: (idx < self.len()) {
+        KeyType curr_start = self.[idx].start;
+
+        while (start <= curr_start) {
+            if (curr_start == start) {
+                //do not generate segs.
+                in_heap.push(idx);
+                h.push({self.[idx].end, idx});
+                idx++;
+                continue OUTER;
             }
 
-            begin = idx;
-        }
-        idx ++;
-    }
-}
+            if (h.len() == 0) {
+                start = curr_start;
+                in_heap.push(idx);
+                h.push({self.[idx].end, idx});
+                idx++;
+                continue OUTER;
+            }
 
-alias CmpFn = fn bool(IpRange, uint);
-
-fn bool less(IpRange r, uint v) @inline {
-    return r.start < v;
-}
-
-fn bool large(IpRange r, uint v) @inline {
-    return v >= r.start;
-}
-
-//find the first IpRange where start >= v.
-macro usz lower_bound(list, v, CmpFn cmp) {
-    usz count = list.size;
-    usz first = 0;
-    usz it @noinit;
-    usz step @noinit;
-
-    while (count > 0) {
-        it = first;
-        step = count / 2;
-        it += step;
-
-        if (cmp(list[it], v)) {
-            first = ++it;
-            count -= step + 1;
-        } else {
-            count = step;
-        }
-    }
-    return first;
-}
-
-macro usz upper_bound(iplist, v, CmpFn cmp) {
-    usz count = iplist.size;
-    usz first = 0;
-    usz it @noinit;
-    usz step @noinit;
-
-    while (count > 0) {
-        it = first;
-        step = count / 2;
-        it += step;
-
-        if (cmp(iplist[it], v)) {
-            first = ++it;
-            count -= step + 1;
-        } else {
-            count = step;
+            //curr_start > start
+            HeapItem top = h.first()!;
+            if (curr_start <= top.end) {
+                //[start, curr_start], [curr_start + 1, ..]
+                uint winner = in_heap.pick_winner(self);
+                sg_list.push({.r = {start, curr_start - 1}, .idx = winner });
+                start = curr_start;
+                in_heap.push(idx);
+                h.push({self.[idx].end, idx});
+                idx ++;
+                continue OUTER;
+            } else {
+                while (h.len() > 0 && curr_start > top.end) {
+                    if (top.end >= start) {
+                        uint winner = in_heap.pick_winner(self);
+                        sg_list.push({.r = {start, top.end}, .idx = winner });
+                        start = top.end + 1;
+                    }
+                    top = h.pop()!;
+                    in_heap.remove_item(top.idx);
+                }
+            }
         }
     }
 
-    return first;
-}
-
-
-fn void test_lower_bound() @test {
-    IpRangeList rl;
-    @pool() {
-        rl.tinit_with_array( { {0,1}, {0,2}, {2,3}, {2,4}, {2,6} } );
-
-        assert(lower_bound(rl, 1, &less) == 2);
-        assert(lower_bound(rl, 2, &less) == 2);
-    };
-}
-
-fn void test_upper_bound() @test {
-    IpRangeList rl;
-    @pool() {
-        rl.tinit_with_array( { {0,1}, {0,2}, {2,3}, {2,4}, {2,6} } );
-        assert(upper_bound(rl, 1, &large) == 2);
-        assert(upper_bound(rl, 2, &large) == 5);
-    };
-}
-
-fn usz IpRangeList.search(&self, uint v) {
+    //start should be the last range's start
+    assert (start == self.array_view()[^1].start);
+    HeapItem top;
+    while (h.len() > 0) {
+        top = h.first()!;
+        if (top.end >= start) {
+            uint winner = in_heap.pick_winner(self);
+            sg_list.push({.r = {start, top.end}, .idx = winner });
+            start = top.end + 1;
+        }
+        top = h.pop()!;
+        in_heap.remove_item(top.idx);
+    }
+    return sg_list;
 }
 

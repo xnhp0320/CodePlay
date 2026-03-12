@@ -6,13 +6,12 @@ import std::io;
 
 fn int main(String[] args)
 {
-    IpRangeList rl;
+    IpRangeList{uint} rl;
     rl.init(mem);
-    iprange::load_rangelist(mem, "ipv4_fib.txt", &rl)!!; 
-    rl.sort();
+    iprange::load_rangelist {uint}(mem, "ipv4_fib.txt", &rl)!!; 
 
     foreach(r : rl) {
-        io::printf("%s\n", iprange::cidr_from_iprange(r));
+        io::printf("%s\n", iprange::cidr_from_iprange {uint}(r));
     }
 
 	return 0;

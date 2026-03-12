@@ -5,7 +5,7 @@ import tbmlib::bitmap;
 import tbmlib::cidr;
 import std::io;
 import std::collections::list;
-import std::sort::is;
+import std::sort;
 import std::math;
 
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
