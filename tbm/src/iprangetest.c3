@@ -76,3 +76,22 @@ fn void test_build_seg_3() @test {
     assert (sg_list[0] == (Seg){ .r = {0xc000_0000, 0xc000_0001}, .idx = 0});
     assert (sg_list[1] == (Seg){ .r = {0xc000_0002, 0xc000_0003}, .idx = 1});
 }
+
+fn void test_build_seg_4() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+    Cidr c = {0xc000_0000, 29};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xc000_0002, 31};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+    //foreach (s: sg_list) {
+    //    io::printf("%s\n", s);
+    //}
+    assert (sg_list[0] == (Seg){ .r = {0xc000_0000, 0xc000_0001}, .idx = 0});
+    assert (sg_list[1] == (Seg){ .r = {0xc000_0002, 0xc000_0003}, .idx = 1});
+    assert (sg_list[2] == (Seg){ .r = {0xc000_0004, 0xc000_0007}, .idx = 0});
+}
