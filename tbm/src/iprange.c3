@@ -6,6 +6,11 @@ import tbmlib::cidr;
 import tbmlib::common;
 
 typedef IpRange = inline range::Range {KeyType};
+
+fn usz? IpRange.to_format(&self, Formatter *f) @dynamic {
+    return f.printf("[%x %x]", self.start, self.end);
+}
+
 alias Cidr @private = cidr::Cidr {KeyType};
 
 <* @require common::@cidr_valid(cidr)
@@ -23,7 +28,7 @@ fn IpRange iprange_from_cidr(Cidr cidr) {
 }
 
 fn Cidr cidr_from_iprange(IpRange r) {
-    return { .ip = r.start, .cidr = (uint)(KeyType.sizeof * 7 - (r.end - r.start).popcount()) };
+    return { .ip = r.start, .cidr = (uint)(KeyType.sizeof * 8 - (r.end - r.start).popcount()) };
 }
 
 alias IpRangeList = List {IpRange};
@@ -63,12 +68,13 @@ fn void? load_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
 alias IdxList = List {uint};
 
 fn uint IdxList.pick_winner(&self, IpRangeList *rl) {
-    uint prefixlen = cidr_from_iprange(rl.[0]).cidr;
+    uint prefixlen = cidr_from_iprange(rl.[self.[0]]).cidr;
     uint winner = self.[0];
     foreach (idx : self.array_view()[1 .. ]) {
         Cidr c = cidr_from_iprange(rl.[idx]);
         if (c.cidr > prefixlen) {
             winner = idx;
+            prefixlen = c.cidr;
         }
     }
     return winner;
@@ -101,7 +107,6 @@ alias SegList = List {Seg};
 
 fn SegList? IpRangeList.build_segs(&self) {
 
-    quicksort(self);
     List{uint} in_heap;
     in_heap.init(mem);
     defer in_heap.free();
@@ -109,6 +114,7 @@ fn SegList? IpRangeList.build_segs(&self) {
     Heap h;
     h.init(mem);
     defer h.free();
+    quicksort(self);
 
     h.push({self.[0].end, 0});
     KeyType start = self.[0].start;
