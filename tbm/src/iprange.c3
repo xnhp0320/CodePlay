@@ -156,7 +156,7 @@ fn SegList? IpRangeList.build_segs(&self) {
                 idx ++;
                 continue OUTER;
             } else {
-                while (h.len() > 0 && curr_start > top.end) {
+                while (h.len() > 0 && curr_start > h.first()!.end) {
                     if (top.end >= start) {
                         uint winner = in_heap.pick_winner(self);
                         sg_list.push({.r = {start, top.end}, .idx = winner });
