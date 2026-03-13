@@ -1,15 +1,23 @@
 module tbmlibtest;
+import iprange;
 import tbmlib;
 import tbmlib::common;
 import tbmlib::bitmap;
 import tbmlib::cidr;
 import std::io;
+import std::io::file;
 import std::collections::list;
 import std::sort;
 import std::math;
+import std::net;
 
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
 alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
+alias FibCidr = cidr::Cidr {uint};
+alias FibIpRangeList = iprange::IpRangeList {uint};
+alias FibSegList = iprange::SegList {uint};
+alias FibTbm = Tbm {5, uint, FibCidr};
+alias FibAlloc = TempTbmAllocator {5, uint, FibCidr};
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
 
@@ -98,6 +106,14 @@ fn void test_cidr_print() @test {
         io::fprintf(&out, "%s", cidr)!!;
         assert (out.str_view() == "0x00000000/3");
     };
+}
+
+fn void test_cidr_from_full_prefix() @test {
+    InetAddress addr = net::ipv4_from_str("202.6.115.167")!!;
+    Cidr {uint} cidr;
+    cidr.from(&addr, 32);
+    assert(cidr.ip == 0xca06_73a7);
+    assert(cidr.cidr == 32);
 }
 
 macro @output(#cidr, #value, #aux) @local {
@@ -498,5 +514,108 @@ fn void test_del_all() @test {
         assert(root.external == 0);
         assert(root.internal == 0);
         assert(root.next == null);
+    };
+}
+
+fn void test_lookup_sibling_external() @test {
+    Tbm{3, uint, uint} tbm;
+    TempTbmAllocator{3, uint, uint} alloc;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
+        tbm.insert(cidr, 1)!!;
+
+        cidr = {.ip = 0x2000_0000, .cidr = 3 };
+        tbm.insert(cidr, 6)!!;
+
+        assert(tbm.lookup(0x0000_0000)!! == 1);
+        assert(tbm.lookup(0x2000_0000)!! == 6);
+        assert(@catch(tbm.lookup(0x4000_0000)) == common::VALUE_NOT_FOUND);
+    };
+}
+
+fn void test_lookup_cached_fallback() @test {
+    Tbm{3, uint, uint} tbm;
+    TempTbmAllocator{3, uint, uint} alloc;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        Cidr{uint} cidr = {.ip = 0x0000_0000, .cidr = 1 };
+        tbm.insert(cidr, 9)!!;
+
+        cidr = {.ip = 0x0000_0000, .cidr = 6 };
+        tbm.insert(cidr, 2)!!;
+
+        assert(tbm.lookup(0x0000_0000)!! == 2);
+        assert(tbm.lookup(0x1000_0000)!! == 9);
+        assert(@catch(tbm.lookup(0x8000_0000)) == common::VALUE_NOT_FOUND);
+    };
+}
+
+fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    InetAddress addr;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                addr = net::ipv4_from_str(line)!;
+            } else {
+                uint prefixlen = line.to_uint()!;
+                FibCidr c;
+                c.from(&addr, prefixlen);
+                tbm.insert(c, c)!!;
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
+fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSegList *seg_list, FibIpRangeList *rl, FibTbm *tbm) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    uint ip;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                ip = net::ipv4_from_str(line)!.ip4.val;
+            } else {
+                uint range_idx = seg_list.do_lpm(ip)!!;
+                FibCidr range_cidr = iprange::cidr_from_iprange{uint}(rl.[range_idx]);
+                FibCidr tbm_cidr = tbm.lookup(ip)!!;
+                assert(range_cidr.ip == tbm_cidr.ip);
+                assert(range_cidr.cidr == tbm_cidr.cidr);
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
+fn void test_ipv4_fib_lookup_consistency() @test {
+    FibIpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+
+    FibAlloc alloc;
+    FibTbm tbm;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        String filename = "ipv4_fib.txt";
+        iprange::load_ipv4_rangelist{uint}(tmem, filename, &rl)!!;
+        FibSegList seg_list = rl.build_segs()!!;
+        defer seg_list.free();
+
+        load_ipv4_fib_tbm(tmem, filename, &tbm)!!;
+        assert_ipv4_fib_lookup_matches(tmem, filename, &seg_list, &rl, &tbm)!!;
     };
 }

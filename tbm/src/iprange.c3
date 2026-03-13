@@ -43,7 +43,7 @@ fn bool IpRange.less(&self, IpRange other) {
     return self.start < other.start; 
 }
 
-fn void? load_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
+fn void? load_ipv4_rangelist(Allocator alloc, String filename, IpRangeList *rl) {
     File f = file::open(filename, "r")!;
     defer (void)f.close();
     usz idx = 0;
@@ -105,6 +105,31 @@ fn bool HeapItem.less(&self, HeapItem other) {
 alias Heap = PriorityQueue {HeapItem};
 alias SegList = List {Seg};
 
+fn uint? SegList.do_lpm(&self, KeyType ip) {
+    if (self.len() == 0) {
+        return common::MISSING~;
+    }
+
+    isz lo = 0;
+    isz hi = (isz)self.len() - 1;
+
+    while (lo <= hi) {
+        isz mid = lo + ((hi - lo) / 2);
+        Seg seg = self.[(usz)mid];
+        if (ip < seg.r.start) {
+            hi = mid - 1;
+            continue;
+        }
+        if (ip > seg.r.end) {
+            lo = mid + 1;
+            continue;
+        }
+        return seg.idx;
+    }
+
+    return common::MISSING~;
+}
+
 fn SegList? IpRangeList.build_segs(&self) {
 
     List{uint} in_heap;
@@ -157,6 +182,7 @@ fn SegList? IpRangeList.build_segs(&self) {
                 continue OUTER;
             } else {
                 while (h.len() > 0 && curr_start > h.first()!.end) {
+                    top = h.first()!;
                     if (top.end >= start) {
                         uint winner = in_heap.pick_winner(self);
                         sg_list.push({.r = {start, top.end}, .idx = winner });
@@ -184,4 +210,3 @@ fn SegList? IpRangeList.build_segs(&self) {
     }
     return sg_list;
 }
-

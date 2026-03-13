@@ -169,14 +169,14 @@ fn usz? Cidr.to_format(&self, Formatter *f) @dynamic {
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint) {
     assert(addr.is_ipv6 == false);
-    KeyType mask = cidr < KeyType.sizeof * 8 ? KeyType.max << (KeyType.sizeof * 8 - cidr) : 0;
+    KeyType mask = cidr == 0 ? 0 : KeyType.max << (KeyType.sizeof * 8 - cidr);
     self.ip = addr.ip4.val & mask;
     self.cidr = cidr;
 }
 
 fn void Cidr.from(&self, InetAddress *addr, uint cidr) @if(KeyType == uint128) {
     assert(addr.is_ipv6 == true);
-    KeyType mask = cidr < KeyType.sizeof * 8 ? KeyType.max << (KeyType.sizeof * 8 - cidr) : 0;
+    KeyType mask = cidr == 0 ? 0 : KeyType.max << (KeyType.sizeof * 8 - cidr);
     self.ip = addr.ip6.val & mask;
     self.cidr = cidr;
 }
@@ -452,7 +452,7 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
         stride = @key_shift(ip);
         if (try offset = node.external.check_exl_bitmap(stride)) {
             cache[cache_idx ++] = {node, stride};
-            node = (TbmNode *)node.next;
+            node = (TbmNode *)node.next + offset;
         } else {
             InlStrideType inl_stride @noinit;
             inl_stride.from(stride);
@@ -462,7 +462,7 @@ fn ValueType? Tbm.lookup(&self, KeyType ip) {
                 foreach_r(&c : cache[:cache_idx]) {
                     inl_stride.from(c.stride);
                     if (try offset = c.node.internal.check_inl_bitmap(inl_stride)) {
-                        return *node.get_value(offset);
+                        return *c.node.get_value(offset);
                     }
                 }
             }

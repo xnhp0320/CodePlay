@@ -8,7 +8,7 @@ fn int main(String[] args)
 {
     IpRangeList{uint} rl;
     rl.init(mem);
-    iprange::load_rangelist {uint}(mem, "ipv4_fib.txt", &rl)!!; 
+    iprange::load_ipv4_rangelist {uint}(mem, "ipv4_fib.txt", &rl)!!; 
 
     foreach(r : rl) {
         io::printf("%s\n", iprange::cidr_from_iprange {uint}(r));

@@ -1,6 +1,7 @@
 module iprangetest;
 import iprange;
 import tbmlib::cidr;
+import tbmlib::common;
 import std::io;
 
 alias IpRangeList = iprange::IpRangeList{uint};
@@ -157,4 +158,60 @@ fn void test_build_seg_7() @test {
     assert (sg_list[1] == (Seg){ .r = {0xc000_0002, 0xc000_003f}, .idx = 1});
     assert (sg_list[2] == (Seg){ .r = {0xc000_0040, 0xc000_007f}, .idx = 2});
     assert (sg_list[3] == (Seg){ .r = {0xc000_0080, 0xc000_00ff}, .idx = 1});
+}
+
+fn void test_do_lpm_0() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+    Cidr c = {0xc000_0000, 31};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xc000_0000, 24};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xc000_0040, 26};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+
+    assert(sg_list.do_lpm(0xc000_0000)!! == 0);
+    assert(sg_list.do_lpm(0xc000_0001)!! == 0);
+    assert(sg_list.do_lpm(0xc000_0002)!! == 1);
+    assert(sg_list.do_lpm(0xc000_003f)!! == 1);
+    assert(sg_list.do_lpm(0xc000_0040)!! == 2);
+    assert(sg_list.do_lpm(0xc000_007f)!! == 2);
+    assert(sg_list.do_lpm(0xc000_0080)!! == 1);
+    assert(sg_list.do_lpm(0xc000_00ff)!! == 1);
+}
+
+fn void test_do_lpm_1() @test {
+    SegList sg_list;
+    sg_list.init(mem);
+    defer sg_list.free();
+    sg_list.push({ .r = {0xc000_0000, 0xc000_0001}, .idx = 0});
+    sg_list.push({ .r = {0xc000_0002, 0xc000_003f}, .idx = 1});
+    sg_list.push({ .r = {0xc000_0040, 0xc000_007f}, .idx = 2});
+    sg_list.push({ .r = {0xc000_0080, 0xc000_00ff}, .idx = 1});
+
+    assert(@catch(sg_list.do_lpm(0xbfff_ffff)) == common::MISSING);
+    assert(@catch(sg_list.do_lpm(0xc000_0100)) == common::MISSING);
+}
+
+fn void test_build_seg_8() @test {
+    IpRangeList rl;
+    rl.init(mem);
+    defer rl.free();
+    Cidr c = {0xca06_7100, 24};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xca06_73a7, 32};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+    c = {0xca06_7400, 23};
+    rl.push(iprange::iprange_from_cidr{uint}(c));
+
+    SegList sg_list = rl.build_segs()!!;
+    defer sg_list.free();
+
+    assert (sg_list[0] == (Seg){ .r = {0xca06_7100, 0xca06_71ff}, .idx = 0});
+    assert (sg_list[1] == (Seg){ .r = {0xca06_73a7, 0xca06_73a7}, .idx = 1});
+    assert (sg_list[2] == (Seg){ .r = {0xca06_7400, 0xca06_75ff}, .idx = 2});
 }
