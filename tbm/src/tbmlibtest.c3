@@ -10,16 +10,29 @@ import std::collections::list;
 import std::sort;
 import std::math;
 import std::net;
+import std::time::clock;
 
+const uint FIB_TBM_STRIDE = 5;
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
 alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
 alias FibCidr = cidr::Cidr {uint};
 alias FibIpRangeList = iprange::IpRangeList {uint};
 alias FibSegList = iprange::SegList {uint};
-alias FibTbm = Tbm {5, uint, FibCidr};
-alias FibAlloc = TempTbmAllocator {5, uint, FibCidr};
+alias FibTbm = Tbm {FIB_TBM_STRIDE, uint, FibCidr};
+alias FibAlloc = TempTbmAllocator {FIB_TBM_STRIDE, uint, FibCidr};
+alias FibBenchAlloc = TrivalAllocator {FIB_TBM_STRIDE, uint, FibCidr};
+List{uint} fib_bench_ips;
+FibTbm fib_bench_tbm;
+FibBenchAlloc fib_bench_alloc;
+bool fib_bench_ready;
+ulong fib_bench_checksum;
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
+
+fn void init_benchmarks() @init {
+    set_benchmark_warmup_iterations(1);
+    set_benchmark_func_iterations("tbmlibtest::benchmark_tbm_ipv4_lookup", 1);
+}
 
 fn void test_bitmap6() @test {
     BitmapType6 v;
@@ -553,6 +566,24 @@ fn void test_lookup_cached_fallback() @test {
     };
 }
 
+fn void test_memory_stats() @test {
+    Tbm{3, uint, uint} tbm;
+    TempTbmAllocator{3, uint, uint} alloc;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        Cidr{uint} cidr = {.ip = 0xc000_0000, .cidr = 2 };
+        tbm.insert(cidr, 4)!!;
+
+        cidr = {.ip = 0x0000_0000, .cidr = 6 };
+        tbm.insert(cidr, 2)!!;
+
+        TbmMemoryStats{3, uint, uint} stats = tbm.memory_stats();
+        assert(stats.tbm_nodes == 5);
+        assert(stats.total_memory == 5 * TbmNode{3, uint, uint}.sizeof);
+    };
+}
+
 fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
     File f = file::open(filename, "r")!;
     defer (void)f.close();
@@ -574,6 +605,39 @@ fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
         }
         idx++;
     }
+}
+
+fn void? load_ipv4_fib_ips(Allocator alloc, String filename, List{uint} *ips) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                ips.push(net::ipv4_from_str(line)!.ip4.val);
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
+fn void? ensure_ipv4_fib_benchmark_data() {
+    if (fib_bench_ready) {
+        return;
+    }
+    if (!fib_bench_ips.is_initialized()) {
+        fib_bench_ips.init(mem);
+    }
+    fib_bench_tbm.alloc = &fib_bench_alloc;
+    @pool() {
+        String filename = "ipv4_fib.txt";
+        load_ipv4_fib_ips(tmem, filename, &fib_bench_ips)!!;
+        load_ipv4_fib_tbm(tmem, filename, &fib_bench_tbm)!!;
+    };
+    fib_bench_ready = true;
 }
 
 fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSegList *seg_list, FibIpRangeList *rl, FibTbm *tbm) {
@@ -618,4 +682,29 @@ fn void test_ipv4_fib_lookup_consistency() @test {
         load_ipv4_fib_tbm(tmem, filename, &tbm)!!;
         assert_ipv4_fib_lookup_matches(tmem, filename, &seg_list, &rl, &tbm)!!;
     };
+}
+
+fn void benchmark_tbm_ipv4_lookup() @benchmark {
+    ensure_ipv4_fib_benchmark_data()!!;
+
+    const uint ROUNDS = 16;
+    ulong checksum = 0;
+    usz total_lookups = fib_bench_ips.len() * ROUNDS;
+    Clock started = clock::now();
+    @start_benchmark();
+    uint round = 0;
+    while (round < ROUNDS) {
+        foreach (ip : fib_bench_ips) {
+            FibCidr cidr = fib_bench_tbm.lookup(ip)!!;
+            checksum += (ulong)cidr.ip + cidr.cidr;
+        }
+        round++;
+    }
+    @end_benchmark();
+    long elapsed_ns = (long)started.mark();
+    double avg_lookup_ns = (double)elapsed_ns / total_lookups;
+    double mpps = ((double)total_lookups * 1000.0) / elapsed_ns;
+    fib_bench_checksum = checksum;
+    @log_benchmark("avg lookup: %.2f ns, speed: %.2f Mpps, lookups=%d, ips=%d, rounds=%d, checksum=%d",
+        avg_lookup_ns, mpps, total_lookups, fib_bench_ips.len(), ROUNDS, checksum);
 }

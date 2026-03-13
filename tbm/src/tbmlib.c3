@@ -310,6 +310,15 @@ struct Tbm {
     TbmAllocator alloc;
 }
 
+struct TbmMemoryStats (Printable) {
+    usz tbm_nodes;
+    usz total_memory;
+}
+
+fn usz? TbmMemoryStats.to_format(&self, Formatter *f) @dynamic {
+    return f.printf("tbm_nodes=%d total_memory=%d", self.tbm_nodes, self.total_memory);
+}
+
 macro StrideType @key_shift(KeyType #ip) {
     defer #ip <<= STRIDE;
     return {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
@@ -318,6 +327,15 @@ macro StrideType @key_shift(KeyType #ip) {
 fn usz TbmNode.count_inl_nodes(&self) {
     usz count = (usz)self.internal.popcount();
     return count == 0 ? 0 : (count + ROUTE_NUM) / ROUTE_NUM;
+}
+
+fn usz TbmNode.count_memory_nodes(&self) {
+    usz count = 1 + self.count_inl_nodes();
+    @foreach_1bit(self.external; uint pos) {
+        TbmNode *node = self.next_exl({ (StrideTypeInner)pos });
+        count += node.count_memory_nodes();
+    };
+    return count;
 }
 
 fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType stride) {
@@ -507,6 +525,11 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
 fn void Tbm.iterate(&self, Iterator f, void *aux) {
     Cidr cidr;
     self.root.iterate(&cidr, 0, f, aux);
+}
+
+fn TbmMemoryStats Tbm.memory_stats(&self) {
+    usz tbm_nodes = self.root.count_memory_nodes();
+    return { .tbm_nodes = tbm_nodes, .total_memory = tbm_nodes * TbmNode.sizeof };
 }
 
 fn void TbmNode.remove_value_inplace(&self, uint pos) {
