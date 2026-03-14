@@ -3,6 +3,7 @@ import iprange;
 import tbmlib;
 import tbmlib::common;
 import tbmlib::bitmap;
+import tbmlib::bitmap_slab;
 import tbmlib::cidr;
 import std::io;
 import std::io::file;
@@ -15,12 +16,14 @@ import std::time::clock;
 const uint FIB_TBM_STRIDE = 5;
 alias BitmapType6 = tbmlib::bitmap::BitmapType {6};
 alias BitmapType7 = tbmlib::bitmap::BitmapType {7};
+alias UintBitmapSlab = bitmap_slab::BitmapSlab {uint};
 alias FibCidr = cidr::Cidr {uint};
 alias FibIpRangeList = iprange::IpRangeList {uint};
 alias FibSegList = iprange::SegList {uint};
 alias FibTbm = Tbm {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibAlloc = TempTbmAllocator {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibBenchAlloc = TrivalAllocator {FIB_TBM_STRIDE, uint, FibCidr};
+alias FibSlabAlloc = SlabAllocator {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibCidr6 = cidr::Cidr {uint128};
 alias FibIpRangeList6 = iprange::IpRangeList {uint128};
 alias FibSegList6 = iprange::SegList {uint128};
@@ -48,6 +51,81 @@ fn void test_bitmap7() @test {
     BitmapType7 v;
     assert(@bitmap_set{7}(v, 1) == 2);
     assert(@bitmap_set{7}(v, 0) == 1);
+}
+
+fn void test_bitmap_slab_alloc_free() @test {
+    UintBitmapSlab slab;
+    assert(slab.init(32));
+    defer slab.release();
+
+    uint *first = slab.alloc(5)!!;
+    uint *second = slab.alloc(3)!!;
+
+    assert(first == slab.storage);
+    assert(second == slab.storage + 5);
+    assert(slab.free_nodes == 24);
+    assert(slab.cache_entries == 1);
+    assert(slab.segment_cache[0].offset == 8);
+    assert(slab.segment_cache[0].len == 24);
+
+    slab.free(first, 5);
+    assert(slab.free_nodes == 29);
+    assert(slab.cache_entries == 2);
+
+    uint *reused = slab.alloc(4)!!;
+    assert(reused == slab.storage);
+    assert(slab.free_nodes == 25);
+    assert(slab.cache_entries == 2);
+
+    bool saw_tail;
+    bool saw_remainder;
+    usz i = 0;
+    while (i < slab.cache_entries) {
+        if (slab.segment_cache[i].offset == 8 && slab.segment_cache[i].len == 24) {
+            saw_tail = true;
+        }
+        if (slab.segment_cache[i].offset == 4 && slab.segment_cache[i].len == 1) {
+            saw_remainder = true;
+        }
+        i++;
+    }
+    assert(saw_tail);
+    assert(saw_remainder);
+}
+
+fn void test_bitmap_slab_merge_free_segments() @test {
+    UintBitmapSlab slab;
+    assert(slab.init(32));
+    defer slab.release();
+
+    uint *a = slab.alloc(4)!!;
+    uint *b = slab.alloc(6)!!;
+    uint *c = slab.alloc(3)!!;
+    assert(a == slab.storage);
+    assert(b == slab.storage + 4);
+    assert(c == slab.storage + 10);
+
+    slab.free(b, 6);
+    slab.free(c, 3);
+
+    uint *merged = slab.alloc(8)!!;
+    assert(merged == slab.storage + 4);
+    assert(slab.free_nodes == 20);
+}
+
+fn void test_bitmap_slab_bitmap_scan_fallback() @test {
+    UintBitmapSlab slab;
+    assert(slab.init(20));
+    defer slab.release();
+
+    slab.cache_entries = 0;
+    uint *ptr = slab.alloc(5)!!;
+
+    assert(ptr == slab.storage);
+    assert(slab.free_nodes == 15);
+    assert(slab.cache_entries == 1);
+    assert(slab.segment_cache[0].offset == 5);
+    assert(slab.segment_cache[0].len == 15);
 }
 
 alias BitmapType3 = tbmlib::bitmap::BitmapType {3};
@@ -587,6 +665,48 @@ fn void test_memory_stats() @test {
         assert(stats.tbm_nodes == 5);
         assert(stats.total_memory == 5 * TbmNode{3, uint, uint}.sizeof);
     };
+}
+
+fn void test_slab_allocator_tbm_roundtrip() @test {
+    Tbm{3, uint, uint} tbm;
+    SlabAllocator{3, uint, uint} alloc;
+    assert(alloc.init(32));
+    defer alloc.release();
+    tbm.alloc = &alloc;
+
+    Cidr{uint} cidr = {.ip = 0, .cidr = 3 };
+    tbm.insert(cidr, 1)!!;
+
+    cidr = {.ip = 0x2000_0000, .cidr = 3 };
+    tbm.insert(cidr, 6)!!;
+
+    cidr = {.ip = 0xe000_0000, .cidr = 6 };
+    tbm.insert(cidr, 3)!!;
+
+    cidr = {.ip = 0xc000_0000, .cidr = 2 };
+    tbm.insert(cidr, 4)!!;
+
+    assert(tbm.lookup(0x0000_0000)!! == 1);
+    assert(tbm.lookup(0x2000_0000)!! == 6);
+    assert(tbm.lookup(0xe000_0000)!! == 3);
+    assert(tbm.lookup(0xf000_0000)!! == 4);
+
+    TbmMemoryStats{3, uint, uint} stats = tbm.memory_stats();
+    assert(alloc.slab.free_nodes == alloc.slab.total_nodes - (stats.tbm_nodes - 1));
+
+    cidr = {.ip = 0, .cidr = 3 };
+    tbm.root.remove(&alloc, cidr)!!;
+    cidr = {.ip = 0x2000_0000, .cidr = 3 };
+    tbm.root.remove(&alloc, cidr)!!;
+    cidr = {.ip = 0xe000_0000, .cidr = 6 };
+    tbm.root.remove(&alloc, cidr)!!;
+    cidr = {.ip = 0xc000_0000, .cidr = 2 };
+    tbm.root.remove(&alloc, cidr)!!;
+
+    assert(tbm.root.internal == 0);
+    assert(tbm.root.external == 0);
+    assert(tbm.root.next == null);
+    assert(alloc.slab.free_nodes == alloc.slab.total_nodes);
 }
 
 fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {

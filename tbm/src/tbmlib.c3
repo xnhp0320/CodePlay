@@ -26,7 +26,7 @@ macro stride_mask($Type, shift) {
 
 interface TbmAllocator {
     fn void*? alloc(usz nodes_count);
-    fn void free(void * ptr);
+    fn void free(void * ptr, usz node_count);
 }
 
 macro @foreach_1bit(bm; @body(pos)) {
@@ -190,6 +190,7 @@ module tbmlib <STRIDE, KeyType, ValueType>;
 import std::io;
 import tbmlib::common;
 import tbmlib::bitmap;
+import tbmlib::bitmap_slab;
 
 alias @remove_wildcard @private = tbmlib::common::@remove_wildcard;
 alias stride_mask @private = tbmlib::common::stride_mask;
@@ -244,7 +245,8 @@ typedef TrivalAllocator (TbmAllocator) = uptr;
 fn void*? TrivalAllocator.alloc(&self, usz nodes_count) @dynamic {
     return calloc(nodes_count * TbmNode.sizeof);
 }
-fn void TrivalAllocator.free(&self, void *ptr) @dynamic {
+fn void TrivalAllocator.free(&self, void *ptr, usz node_count) @dynamic {
+    (void)node_count;
     return free(ptr);
 }
 
@@ -253,8 +255,30 @@ fn void*? TempTbmAllocator.alloc(&self, usz nodes_count) @dynamic {
     return tcalloc(nodes_count * TbmNode.sizeof);
 }
 
-fn void TempTbmAllocator.free(&self, void *ptr) @dynamic {
+fn void TempTbmAllocator.free(&self, void *ptr, usz node_count) @dynamic {
+    (void)ptr;
+    (void)node_count;
+}
 
+alias TbmBitmapSlab @private = tbmlib::bitmap_slab::BitmapSlab {TbmNode};
+struct SlabAllocator (TbmAllocator) {
+    TbmBitmapSlab slab;
+}
+
+fn bool SlabAllocator.init(&self, usz total_nodes) {
+    return self.slab.init(total_nodes);
+}
+
+fn void SlabAllocator.release(&self) {
+    self.slab.release();
+}
+
+fn void*? SlabAllocator.alloc(&self, usz nodes_count) @dynamic {
+    return self.slab.alloc(nodes_count);
+}
+
+fn void SlabAllocator.free(&self, void *ptr, usz node_count) @dynamic {
+    self.slab.free(ptr, node_count);
 }
 
 const ROUTE_NUM = TbmNode.sizeof / ValueType.sizeof;
@@ -324,9 +348,13 @@ macro StrideType @key_shift(KeyType #ip) {
     return {(StrideTypeInner)((#ip & stride_mask($typeof(#ip), STRIDE)) >> ($typeof(#ip).sizeof * 8 - STRIDE))};
 }
 
-fn usz TbmNode.count_inl_nodes(&self) {
-    usz count = (usz)self.internal.popcount();
+fn usz count_inl_nodes(BitmapType internal) {
+    usz count = (usz)internal.popcount();
     return count == 0 ? 0 : (count + ROUTE_NUM) / ROUTE_NUM;
+}
+
+fn usz TbmNode.count_inl_nodes(&self) {
+    return count_inl_nodes(self.internal);
 }
 
 fn usz TbmNode.count_memory_nodes(&self) {
@@ -352,7 +380,7 @@ fn TbmNode*? TbmNode.insert_exl_node(&self, TbmAllocator alloc, StrideType strid
     mem::copy(new_after, copy_start, (tot_exl_count - before_exl_count) * TbmNode.sizeof);
 
     self.external = @bitmap_set(self.external, stride.val);
-    alloc.free((TbmValueNode*)self.next - tot_inl_count);
+    alloc.free((TbmValueNode*)self.next - tot_inl_count, tot_exl_count + tot_inl_count);
     self.next = new_node + tot_inl_count;
     return new_after - 1;
 }
@@ -435,7 +463,7 @@ fn void? TbmNode.insert_inl(&self, TbmAllocator alloc, Cidr prefix, ValueType v)
         void *new_exl = (TbmNode*)new_nodes + post_count;
         mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
         self.insert_value(new_exl, pos, v);
-        alloc.free((TbmValueNode*)self.next - prev_count);
+        alloc.free((TbmValueNode*)self.next - prev_count, prev_count + exl_nodes);
         self.next = new_exl;
     }
     self.internal = internal;
@@ -587,7 +615,7 @@ fn void? TbmNode.remove_exl_node(&self, TbmAllocator alloc, StrideType stride) {
     }
 
     self.external = @bitmap_clear(self.external, stride.val);
-    alloc.free((TbmValueNode*)self.next - tot_inl_count);
+    alloc.free((TbmValueNode*)self.next - tot_inl_count, tot_exl_count + tot_inl_count);
     self.next = new_node + tot_inl_count;
 }
 
@@ -610,7 +638,7 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
         }
         internal = @bitmap_clear(internal, pos);
         usz prev_count = self.count_inl_nodes();
-        usz post_count = (usz)(internal.popcount() + ROUTE_NUM) / ROUTE_NUM;
+        usz post_count = count_inl_nodes(internal);
         if (prev_count == post_count) {
             self.remove_value_inplace(pos);
             self.internal = internal;
@@ -618,12 +646,15 @@ fn bool? TbmNode.remove(&self, TbmAllocator alloc, Cidr prefix) {
             void *ptr = (TbmValueNode*)self.next - prev_count;
             usz exl_nodes = self.count_exl_nodes();
             void *new_nodes = alloc.alloc(exl_nodes + post_count)!;
-            void *new_exl = (TbmNode*)new_nodes + post_count;
-            mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
-            self.remove_value(new_exl, pos);
+            void *new_exl = null;
+            if (new_nodes) {
+                new_exl = (TbmNode*)new_nodes + post_count;
+                mem::copy(new_exl, self.next, exl_nodes * TbmNode.sizeof);
+                self.remove_value(new_exl, pos);
+            }
 
             self.internal = internal;
-            alloc.free(ptr);
+            alloc.free(ptr, prev_count + exl_nodes);
             self.next = new_exl;
         }
         return self.empty_node();
