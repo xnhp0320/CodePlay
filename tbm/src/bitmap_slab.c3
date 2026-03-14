@@ -109,11 +109,7 @@ fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) 
 fn void BitmapSlab.clear_range(&self, usz offset, usz node_count) {
     char *bytes = (char*)(self.storage + offset);
     usz total_bytes = node_count * NodeType.sizeof;
-    usz i = 0;
-    while (i < total_bytes) {
-        bytes[i] = 0;
-        i++;
-    }
+    mem::clear(bytes, total_bytes);
 }
 
 fn void BitmapSlab.cache_remove(&self, usz idx) {
@@ -186,42 +182,52 @@ fn void BitmapSlab.cache_insert(&self, usz offset, usz node_count) {
     }
 }
 
-fn bool BitmapSlab.find_bitmap_fit(&self, usz node_count, usz *offset_out, usz *run_len) {
-    usz idx = 0;
-    usz current_len = 0;
-    usz current_start = 0;
+fn usz BitmapSlab.bitmap_scan(&self, bool target, usz start, usz end) {
+    if (start >= end) {
+        return end;
+    }
 
-    while (idx < self.total_nodes) {
-        usz word_idx = idx / BITS_PER_WORD;
-        if (self.bitmap[word_idx] == 0) {
-            idx = (word_idx + 1) * BITS_PER_WORD;
-            current_len = 0;
-            current_start = idx;
-            continue;
-        }
+    usz word_idx = start / BITS_PER_WORD;
+    ulong unit = target ? self.bitmap[word_idx] : ~self.bitmap[word_idx];
+    unit >>= start % BITS_PER_WORD;
+    if (unit == 0) {
+        start -= start % BITS_PER_WORD;
+        start += BITS_PER_WORD;
+        word_idx++;
 
-        if (!self.bit_is_free(idx)) {
-            idx++;
-            current_len = 0;
-            current_start = idx;
-            continue;
-        }
-
-        if (current_len == 0) {
-            current_start = idx;
-        }
-        current_len++;
-        idx++;
-
-        if (current_len == node_count) {
-            while (idx < self.total_nodes && self.bit_is_free(idx)) {
-                current_len++;
-                idx++;
+        while (start < end) {
+            unit = target ? self.bitmap[word_idx] : ~self.bitmap[word_idx];
+            if (unit != 0) {
+                break;
             }
-            *offset_out = current_start;
-            *run_len = current_len;
+            start += BITS_PER_WORD;
+            word_idx++;
+        }
+        if (start >= end) {
+            return end;
+        }
+    }
+
+    start += (usz)unit.ctz();
+    return start < end ? start : end;
+}
+
+fn bool BitmapSlab.find_bitmap_fit(&self, usz node_count, usz *offset_out, usz *run_len) {
+    usz search = 0;
+    while (search < self.total_nodes) {
+        usz run_start = self.bitmap_scan(true, search, self.total_nodes);
+        if (run_start == self.total_nodes) {
+            return false;
+        }
+
+        usz run_end = self.bitmap_scan(false, run_start, self.total_nodes);
+        usz found_len = run_end - run_start;
+        if (found_len >= node_count) {
+            *offset_out = run_start;
+            *run_len = found_len;
             return true;
         }
+        search = run_end;
     }
 
     return false;
