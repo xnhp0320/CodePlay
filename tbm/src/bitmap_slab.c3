@@ -8,6 +8,20 @@ struct FreeSegment {
     usz len;
 }
 
+struct BitmapSlabStats {
+    usz alloc_requests;
+    usz alloc_cache_hits;
+    usz bitmap_fallback_scans;
+    usz free_requests;
+}
+
+fn double BitmapSlabStats.cache_hit_ratio(&self) {
+    if (self.alloc_requests == 0) {
+        return 0.0;
+    }
+    return (double)self.alloc_cache_hits / self.alloc_requests;
+}
+
 struct BitmapSlab {
     NodeType *storage;
     ulong *bitmap;
@@ -15,6 +29,7 @@ struct BitmapSlab {
     usz free_nodes;
     usz bitmap_words;
     usz cache_entries;
+    BitmapSlabStats stats;
     FreeSegment[SEGMENT_CACHE_SIZE] segment_cache;
 }
 
@@ -51,6 +66,7 @@ fn bool BitmapSlab.init(&self, usz total_nodes) {
     self.total_nodes = total_nodes;
     self.free_nodes = total_nodes;
     self.cache_entries = 1;
+    self.stats = {};
     self.segment_cache[0] = { 0, total_nodes };
     return true;
 }
@@ -68,6 +84,7 @@ fn void BitmapSlab.release(&self) {
     self.free_nodes = 0;
     self.bitmap_words = 0;
     self.cache_entries = 0;
+    self.stats = {};
 }
 
 fn bool BitmapSlab.bit_is_free(&self, usz offset) {
@@ -213,6 +230,7 @@ fn usz BitmapSlab.bitmap_scan(&self, bool target, usz start, usz end) {
 }
 
 fn bool BitmapSlab.find_bitmap_fit(&self, usz node_count, usz *offset_out, usz *run_len) {
+    self.stats.bitmap_fallback_scans++;
     usz search = 0;
     while (search < self.total_nodes) {
         usz run_start = self.bitmap_scan(true, search, self.total_nodes);
@@ -247,10 +265,12 @@ fn void*? BitmapSlab.alloc(&self, usz node_count) {
         return null;
     }
 
+    self.stats.alloc_requests++;
     usz offset;
     usz run_len;
     isz cached_idx = self.find_cache_fit(node_count);
     if (cached_idx >= 0) {
+        self.stats.alloc_cache_hits++;
         offset = self.segment_cache[(usz)cached_idx].offset;
         assert(self.range_matches(offset, node_count, true));
         self.segment_cache[(usz)cached_idx].offset += node_count;
@@ -284,6 +304,7 @@ fn void BitmapSlab.free(&self, void *ptr, usz node_count) {
         return;
     }
 
+    self.stats.free_requests++;
     assert(self.storage != null);
     usz offset = self.ptr_offset(ptr);
     assert(offset + node_count <= self.total_nodes);

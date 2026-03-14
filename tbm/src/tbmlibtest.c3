@@ -34,6 +34,10 @@ FibTbm fib_bench_tbm;
 FibBenchAlloc fib_bench_alloc;
 bool fib_bench_ready;
 ulong fib_bench_checksum;
+bool fib_large_slab_bench_ready;
+FibTbm fib_large_slab_tbm;
+FibSlabAlloc fib_large_slab_alloc;
+usz fib_large_slab_rules;
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
 
@@ -64,17 +68,24 @@ fn void test_bitmap_slab_alloc_free() @test {
     assert(first == slab.storage);
     assert(second == slab.storage + 5);
     assert(slab.free_nodes == 24);
+    assert(slab.stats.alloc_requests == 2);
+    assert(slab.stats.alloc_cache_hits == 2);
+    assert(slab.stats.bitmap_fallback_scans == 0);
     assert(slab.cache_entries == 1);
     assert(slab.segment_cache[0].offset == 8);
     assert(slab.segment_cache[0].len == 24);
 
     slab.free(first, 5);
     assert(slab.free_nodes == 29);
+    assert(slab.stats.free_requests == 1);
     assert(slab.cache_entries == 2);
 
     uint *reused = slab.alloc(4)!!;
     assert(reused == slab.storage);
     assert(slab.free_nodes == 25);
+    assert(slab.stats.alloc_requests == 3);
+    assert(slab.stats.alloc_cache_hits == 3);
+    assert(slab.stats.bitmap_fallback_scans == 0);
     assert(slab.cache_entries == 2);
 
     bool saw_tail;
@@ -123,9 +134,30 @@ fn void test_bitmap_slab_bitmap_scan_fallback() @test {
 
     assert(ptr == slab.storage);
     assert(slab.free_nodes == 15);
+    assert(slab.stats.alloc_requests == 1);
+    assert(slab.stats.alloc_cache_hits == 0);
+    assert(slab.stats.bitmap_fallback_scans == 1);
     assert(slab.cache_entries == 1);
     assert(slab.segment_cache[0].offset == 5);
     assert(slab.segment_cache[0].len == 15);
+}
+
+fn void test_bitmap_slab_cache_hit_ratio() @test {
+    UintBitmapSlab slab;
+    assert(slab.init(16));
+    defer slab.release();
+
+    assert(slab.stats.cache_hit_ratio() == 0.0);
+    uint *ptr = slab.alloc(4)!!;
+    assert(ptr == slab.storage);
+    assert(slab.stats.cache_hit_ratio() == 1.0);
+
+    slab.cache_entries = 0;
+    uint *ptr2 = slab.alloc(2)!!;
+    assert(ptr2 == slab.storage + 4);
+    assert(slab.stats.alloc_requests == 2);
+    assert(slab.stats.alloc_cache_hits == 1);
+    assert(slab.stats.cache_hit_ratio() == 0.5);
 }
 
 alias BitmapType3 = tbmlib::bitmap::BitmapType {3};
@@ -732,6 +764,30 @@ fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
     }
 }
 
+fn usz? load_ipv4_fib_tbm_count(Allocator alloc, String filename, FibTbm *tbm) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    InetAddress addr;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                addr = net::ipv4_from_str(line)!;
+            } else {
+                uint prefixlen = line.to_uint()!;
+                FibCidr c;
+                c.from(&addr, prefixlen);
+                tbm.insert(c, c)!!;
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+    return idx / 2;
+}
+
 fn void? load_ipv4_fib_ips(Allocator alloc, String filename, List{uint} *ips) {
     File f = file::open(filename, "r")!;
     defer (void)f.close();
@@ -838,6 +894,19 @@ fn void? ensure_ipv4_fib_benchmark_data() {
     fib_bench_ready = true;
 }
 
+fn void? ensure_ipv4_large_slab_benchmark_data() {
+    if (fib_large_slab_bench_ready) {
+        return;
+    }
+    assert(fib_large_slab_alloc.init(1_000_000));
+    fib_large_slab_tbm.alloc = &fib_large_slab_alloc;
+    @pool() {
+        String filename = "ipv4_fib_large.txt";
+        fib_large_slab_rules = load_ipv4_fib_tbm_count(tmem, filename, &fib_large_slab_tbm)!!;
+    };
+    fib_large_slab_bench_ready = true;
+}
+
 fn void? assert_ipv4_fib_lookup_matches(Allocator alloc, String filename, FibSegList *seg_list, FibIpRangeList *rl, FibTbm *tbm) {
     File f = file::open(filename, "r")!;
     defer (void)f.close();
@@ -925,4 +994,32 @@ fn void benchmark_tbm_ipv4_lookup() @benchmark {
     fib_bench_checksum = checksum;
     @log_benchmark("avg lookup: %.2f ns, speed: %.2f Mpps, lookups=%d, ips=%d, rounds=%d, checksum=%d",
         avg_lookup_ns, mpps, total_lookups, fib_bench_ips.len(), ROUNDS, checksum);
+}
+
+fn void benchmark_bitmap_slab_large_fib_load() @benchmark {
+    if (fib_large_slab_bench_ready) {
+        @log_benchmark("large slab benchmark already prepared: rules=%d, allocs=%d, cache_hits=%d, hit_rate=%.4f, scans=%d, frees=%d",
+            fib_large_slab_rules,
+            fib_large_slab_alloc.slab.stats.alloc_requests,
+            fib_large_slab_alloc.slab.stats.alloc_cache_hits,
+            fib_large_slab_alloc.slab.stats.cache_hit_ratio(),
+            fib_large_slab_alloc.slab.stats.bitmap_fallback_scans,
+            fib_large_slab_alloc.slab.stats.free_requests);
+        return;
+    }
+
+    Clock started = clock::now();
+    @start_benchmark();
+    ensure_ipv4_large_slab_benchmark_data()!!;
+    @end_benchmark();
+    long elapsed_ns = (long)started.mark();
+    double elapsed_ms = (double)elapsed_ns / 1_000_000.0;
+    @log_benchmark("large fib load: %.2f ms, rules=%d, allocs=%d, cache_hits=%d, hit_rate=%.4f, scans=%d, frees=%d",
+        elapsed_ms,
+        fib_large_slab_rules,
+        fib_large_slab_alloc.slab.stats.alloc_requests,
+        fib_large_slab_alloc.slab.stats.alloc_cache_hits,
+        fib_large_slab_alloc.slab.stats.cache_hit_ratio(),
+        fib_large_slab_alloc.slab.stats.bitmap_fallback_scans,
+        fib_large_slab_alloc.slab.stats.free_requests);
 }
