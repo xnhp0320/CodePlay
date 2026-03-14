@@ -23,79 +23,58 @@ fn double BitmapSlabStats.cache_hit_ratio(&self) {
 }
 
 struct BitmapSlab {
-    NodeType *storage;
-    ulong *bitmap;
-    usz total_nodes;
+    NodeType[] storage;
+    ulong[] bitmap;
     usz free_nodes;
-    usz bitmap_words;
     usz cache_entries;
     BitmapSlabStats stats;
     FreeSegment[SEGMENT_CACHE_SIZE] segment_cache;
 }
 
-fn bool BitmapSlab.init(&self, usz total_nodes) {
+fn void BitmapSlab.init(&self, usz total_nodes) {
     self.release();
     if (total_nodes == 0) {
-        return false;
+        return;
     }
 
-    self.storage = (NodeType*)calloc(total_nodes * NodeType.sizeof);
-    if (self.storage == null) {
-        return false;
+    self.storage = mem::new_array(NodeType, total_nodes);
+    usz bitmap_words = (total_nodes + BITS_PER_WORD - 1) / BITS_PER_WORD;
+    self.bitmap = mem::alloc_array(ulong, bitmap_words);
+    
+    foreach (&bm : self.bitmap) {
+        *bm = ulong.max;
     }
 
-    self.bitmap_words = (total_nodes + BITS_PER_WORD - 1) / BITS_PER_WORD;
-    self.bitmap = (ulong*)calloc(self.bitmap_words * ulong.sizeof);
-    if (self.bitmap == null) {
-        free(self.storage);
-        self.storage = null;
-        self.bitmap_words = 0;
-        return false;
-    }
-
-    usz i = 0;
-    while (i < self.bitmap_words) {
-        self.bitmap[i] = ulong.max;
-        i++;
-    }
     usz tail = total_nodes % BITS_PER_WORD;
     if (tail != 0) {
-        self.bitmap[self.bitmap_words - 1] = ((ulong)1 << tail) - 1;
+        self.bitmap[^1] = ((ulong)1 << tail) - 1;
     }
 
-    self.total_nodes = total_nodes;
     self.free_nodes = total_nodes;
     self.cache_entries = 1;
     self.stats = {};
     self.segment_cache[0] = { 0, total_nodes };
-    return true;
 }
 
 fn void BitmapSlab.release(&self) {
-    if (self.storage != null) {
-        free(self.storage);
-    }
-    if (self.bitmap != null) {
-        free(self.bitmap);
-    }
-    self.storage = null;
-    self.bitmap = null;
-    self.total_nodes = 0;
+    free(self.storage);
+    free(self.bitmap);
+    self.storage = {};
+    self.bitmap = {};
     self.free_nodes = 0;
-    self.bitmap_words = 0;
     self.cache_entries = 0;
     self.stats = {};
 }
 
 fn bool BitmapSlab.bit_is_free(&self, usz offset) {
-    assert(offset < self.total_nodes);
+    assert(offset < self.storage.len);
     usz word_idx = offset / BITS_PER_WORD;
     usz bit_idx = offset % BITS_PER_WORD;
     return (self.bitmap[word_idx] & ((ulong)1 << bit_idx)) != 0;
 }
 
 fn bool BitmapSlab.range_matches(&self, usz offset, usz node_count, bool want_free) {
-    assert(offset + node_count <= self.total_nodes);
+    assert(offset + node_count <= self.storage.len);
     usz i = 0;
     while (i < node_count) {
         if (self.bit_is_free(offset + i) != want_free) {
@@ -107,7 +86,7 @@ fn bool BitmapSlab.range_matches(&self, usz offset, usz node_count, bool want_fr
 }
 
 fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) {
-    assert(offset + node_count <= self.total_nodes);
+    assert(offset + node_count <= self.storage.len);
     usz i = 0;
     while (i < node_count) {
         usz bit_offset = offset + i;
@@ -124,7 +103,7 @@ fn void BitmapSlab.set_range(&self, usz offset, usz node_count, bool mark_free) 
 }
 
 fn void BitmapSlab.clear_range(&self, usz offset, usz node_count) {
-    char *bytes = (char*)(self.storage + offset);
+    char *bytes = (char*)(&self.storage[offset]);
     usz total_bytes = node_count * NodeType.sizeof;
     mem::clear(bytes, total_bytes);
 }
@@ -232,13 +211,13 @@ fn usz BitmapSlab.bitmap_scan(&self, bool target, usz start, usz end) {
 fn bool BitmapSlab.find_bitmap_fit(&self, usz node_count, usz *offset_out, usz *run_len) {
     self.stats.bitmap_fallback_scans++;
     usz search = 0;
-    while (search < self.total_nodes) {
-        usz run_start = self.bitmap_scan(true, search, self.total_nodes);
-        if (run_start == self.total_nodes) {
+    while (search < self.storage.len) {
+        usz run_start = self.bitmap_scan(true, search, self.storage.len);
+        if (run_start == self.storage.len) {
             return false;
         }
 
-        usz run_end = self.bitmap_scan(false, run_start, self.total_nodes);
+        usz run_end = self.bitmap_scan(false, run_start, self.storage.len);
         usz found_len = run_end - run_start;
         if (found_len >= node_count) {
             *offset_out = run_start;
@@ -252,17 +231,21 @@ fn bool BitmapSlab.find_bitmap_fit(&self, usz node_count, usz *offset_out, usz *
 }
 
 fn usz BitmapSlab.ptr_offset(&self, void *ptr) {
-    uptr start = (uptr)self.storage;
+    uptr start = (uptr)self.storage.ptr;
     uptr addr = (uptr)ptr;
     assert(addr >= start);
-    assert(addr < start + self.total_nodes * NodeType.sizeof);
+    assert(addr < start + self.storage.len * NodeType.sizeof);
     assert((addr - start) % NodeType.sizeof == 0);
     return (addr - start) / NodeType.sizeof;
 }
 
 fn void*? BitmapSlab.alloc(&self, usz node_count) {
-    if (self.storage == null || node_count == 0 || node_count > self.free_nodes) {
+    if (node_count == 0) {
         return null;
+    }
+
+    if (node_count > self.free_nodes) {
+        return mem::OUT_OF_MEMORY~; 
     }
 
     self.stats.alloc_requests++;
@@ -281,7 +264,7 @@ fn void*? BitmapSlab.alloc(&self, usz node_count) {
     } else {
         bool found = self.find_bitmap_fit(node_count, &offset, &run_len);
         if (!found) {
-            return null;
+            return mem::OUT_OF_MEMORY~;
         }
         assert(self.range_matches(offset, node_count, true));
         if (run_len > node_count) {
@@ -292,11 +275,7 @@ fn void*? BitmapSlab.alloc(&self, usz node_count) {
     self.set_range(offset, node_count, false);
     self.clear_range(offset, node_count);
     self.free_nodes -= node_count;
-    return self.storage + offset;
-}
-
-fn void*? BitmapSlab.alloc_run(&self, usz node_count) {
-    return self.alloc(node_count);
+    return &self.storage[offset];
 }
 
 fn void BitmapSlab.free(&self, void *ptr, usz node_count) {
@@ -305,16 +284,11 @@ fn void BitmapSlab.free(&self, void *ptr, usz node_count) {
     }
 
     self.stats.free_requests++;
-    assert(self.storage != null);
     usz offset = self.ptr_offset(ptr);
-    assert(offset + node_count <= self.total_nodes);
+    assert(offset + node_count <= self.storage.len);
     assert(self.range_matches(offset, node_count, false));
 
     self.set_range(offset, node_count, true);
     self.free_nodes += node_count;
     self.cache_insert(offset, node_count);
-}
-
-fn void BitmapSlab.release_run(&self, void *ptr, usz node_count) {
-    self.free(ptr, node_count);
 }

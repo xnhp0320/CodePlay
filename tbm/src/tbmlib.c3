@@ -265,8 +265,8 @@ struct SlabAllocator (TbmAllocator) {
     TbmBitmapSlab slab;
 }
 
-fn bool SlabAllocator.init(&self, usz total_nodes) {
-    return self.slab.init(total_nodes);
+fn void SlabAllocator.init(&self, usz total_nodes) {
+    self.slab.init(total_nodes);
 }
 
 fn void SlabAllocator.release(&self) {

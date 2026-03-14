@@ -32,18 +32,19 @@ alias FibAlloc6 = TempTbmAllocator {FIB_TBM_STRIDE, uint128, uint};
 List{uint} fib_bench_ips;
 FibTbm fib_bench_tbm;
 FibBenchAlloc fib_bench_alloc;
-bool fib_bench_ready;
 ulong fib_bench_checksum;
-bool fib_large_slab_bench_ready;
 FibTbm fib_large_slab_tbm;
 FibSlabAlloc fib_large_slab_alloc;
 usz fib_large_slab_rules;
+bool fib_bench_ready;
+bool fib_large_slab_bench_ready;
 
 alias @bitmap_set6 = tbmlib::bitmap::@bitmap_set {6};
 
 fn void init_benchmarks() @init {
     set_benchmark_warmup_iterations(1);
     set_benchmark_func_iterations("tbmlibtest::benchmark_tbm_ipv4_lookup", 1);
+    set_benchmark_func_iterations("tbmlibtest::benchmark_bitmap_slab_large_fib_load", 1);
 }
 
 fn void test_bitmap6() @test {
@@ -59,14 +60,14 @@ fn void test_bitmap7() @test {
 
 fn void test_bitmap_slab_alloc_free() @test {
     UintBitmapSlab slab;
-    assert(slab.init(32));
+    slab.init(32);
     defer slab.release();
 
     uint *first = slab.alloc(5)!!;
     uint *second = slab.alloc(3)!!;
 
-    assert(first == slab.storage);
-    assert(second == slab.storage + 5);
+    assert(first == slab.storage.ptr);
+    assert(second == &slab.storage[5]);
     assert(slab.free_nodes == 24);
     assert(slab.stats.alloc_requests == 2);
     assert(slab.stats.alloc_cache_hits == 2);
@@ -81,7 +82,7 @@ fn void test_bitmap_slab_alloc_free() @test {
     assert(slab.cache_entries == 2);
 
     uint *reused = slab.alloc(4)!!;
-    assert(reused == slab.storage);
+    assert(reused == slab.storage.ptr);
     assert(slab.free_nodes == 25);
     assert(slab.stats.alloc_requests == 3);
     assert(slab.stats.alloc_cache_hits == 3);
@@ -106,33 +107,33 @@ fn void test_bitmap_slab_alloc_free() @test {
 
 fn void test_bitmap_slab_merge_free_segments() @test {
     UintBitmapSlab slab;
-    assert(slab.init(32));
+    slab.init(32);
     defer slab.release();
 
     uint *a = slab.alloc(4)!!;
     uint *b = slab.alloc(6)!!;
     uint *c = slab.alloc(3)!!;
     assert(a == slab.storage);
-    assert(b == slab.storage + 4);
-    assert(c == slab.storage + 10);
+    assert(b == &slab.storage[4]);
+    assert(c == &slab.storage[10]);
 
     slab.free(b, 6);
     slab.free(c, 3);
 
     uint *merged = slab.alloc(8)!!;
-    assert(merged == slab.storage + 4);
+    assert(merged == &slab.storage[4]);
     assert(slab.free_nodes == 20);
 }
 
 fn void test_bitmap_slab_bitmap_scan_fallback() @test {
     UintBitmapSlab slab;
-    assert(slab.init(20));
+    slab.init(20);
     defer slab.release();
 
     slab.cache_entries = 0;
     uint *ptr = slab.alloc(5)!!;
 
-    assert(ptr == slab.storage);
+    assert(ptr == slab.storage.ptr);
     assert(slab.free_nodes == 15);
     assert(slab.stats.alloc_requests == 1);
     assert(slab.stats.alloc_cache_hits == 0);
@@ -144,17 +145,17 @@ fn void test_bitmap_slab_bitmap_scan_fallback() @test {
 
 fn void test_bitmap_slab_cache_hit_ratio() @test {
     UintBitmapSlab slab;
-    assert(slab.init(16));
+    slab.init(16);
     defer slab.release();
 
     assert(slab.stats.cache_hit_ratio() == 0.0);
     uint *ptr = slab.alloc(4)!!;
-    assert(ptr == slab.storage);
+    assert(ptr == slab.storage.ptr);
     assert(slab.stats.cache_hit_ratio() == 1.0);
 
     slab.cache_entries = 0;
     uint *ptr2 = slab.alloc(2)!!;
-    assert(ptr2 == slab.storage + 4);
+    assert(ptr2 == &slab.storage[4]);
     assert(slab.stats.alloc_requests == 2);
     assert(slab.stats.alloc_cache_hits == 1);
     assert(slab.stats.cache_hit_ratio() == 0.5);
@@ -702,7 +703,7 @@ fn void test_memory_stats() @test {
 fn void test_slab_allocator_tbm_roundtrip() @test {
     Tbm{3, uint, uint} tbm;
     SlabAllocator{3, uint, uint} alloc;
-    assert(alloc.init(32));
+    alloc.init(32);
     defer alloc.release();
     tbm.alloc = &alloc;
 
@@ -724,7 +725,7 @@ fn void test_slab_allocator_tbm_roundtrip() @test {
     assert(tbm.lookup(0xf000_0000)!! == 4);
 
     TbmMemoryStats{3, uint, uint} stats = tbm.memory_stats();
-    assert(alloc.slab.free_nodes == alloc.slab.total_nodes - (stats.tbm_nodes - 1));
+    assert(alloc.slab.free_nodes == alloc.slab.storage.len - (stats.tbm_nodes - 1));
 
     cidr = {.ip = 0, .cidr = 3 };
     tbm.root.remove(&alloc, cidr)!!;
@@ -738,7 +739,7 @@ fn void test_slab_allocator_tbm_roundtrip() @test {
     assert(tbm.root.internal == 0);
     assert(tbm.root.external == 0);
     assert(tbm.root.next == null);
-    assert(alloc.slab.free_nodes == alloc.slab.total_nodes);
+    assert(alloc.slab.free_nodes == alloc.slab.storage.len);
 }
 
 fn void? load_ipv4_fib_tbm(Allocator alloc, String filename, FibTbm *tbm) {
@@ -878,7 +879,7 @@ fn void? assert_ipv6_fib_lookup_matches(Allocator alloc, String filename, FibSeg
     }
 }
 
-fn void? ensure_ipv4_fib_benchmark_data() {
+fn void ensure_ipv4_fib_benchmark_data() {
     if (fib_bench_ready) {
         return;
     }
@@ -894,11 +895,12 @@ fn void? ensure_ipv4_fib_benchmark_data() {
     fib_bench_ready = true;
 }
 
-fn void? ensure_ipv4_large_slab_benchmark_data() {
+fn void ensure_ipv4_large_slab_benchmark_data() {
     if (fib_large_slab_bench_ready) {
         return;
     }
-    assert(fib_large_slab_alloc.init(1_000_000));
+
+    fib_large_slab_alloc.init(1_000_000);
     fib_large_slab_tbm.alloc = &fib_large_slab_alloc;
     @pool() {
         String filename = "ipv4_fib_large.txt";
@@ -972,7 +974,7 @@ fn void test_ipv6_fib_lookup_consistency() @test {
 }
 
 fn void benchmark_tbm_ipv4_lookup() @benchmark {
-    ensure_ipv4_fib_benchmark_data()!!;
+    ensure_ipv4_fib_benchmark_data();
 
     const uint ROUNDS = 16;
     ulong checksum = 0;
@@ -997,20 +999,9 @@ fn void benchmark_tbm_ipv4_lookup() @benchmark {
 }
 
 fn void benchmark_bitmap_slab_large_fib_load() @benchmark {
-    if (fib_large_slab_bench_ready) {
-        @log_benchmark("large slab benchmark already prepared: rules=%d, allocs=%d, cache_hits=%d, hit_rate=%.4f, scans=%d, frees=%d",
-            fib_large_slab_rules,
-            fib_large_slab_alloc.slab.stats.alloc_requests,
-            fib_large_slab_alloc.slab.stats.alloc_cache_hits,
-            fib_large_slab_alloc.slab.stats.cache_hit_ratio(),
-            fib_large_slab_alloc.slab.stats.bitmap_fallback_scans,
-            fib_large_slab_alloc.slab.stats.free_requests);
-        return;
-    }
-
     Clock started = clock::now();
     @start_benchmark();
-    ensure_ipv4_large_slab_benchmark_data()!!;
+    ensure_ipv4_large_slab_benchmark_data();
     @end_benchmark();
     long elapsed_ns = (long)started.mark();
     double elapsed_ms = (double)elapsed_ns / 1_000_000.0;
