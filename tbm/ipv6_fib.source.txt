@@ -1,0 +1,6 @@
+Source: https://bgp.tools/table.txt
+Fetched: 2026-03-14
+Format: alternating IPv6 network address line + prefix length line, matching ipv4_fib.txt
+Scope: current snapshot slice normalized from the live IPv6 routing table feed
+Entries: 289 unique prefixes
+Notes: duplicate CIDRs from different origin ASNs were deduplicated by prefix because later tbm/iprange consistency tests compare LPM CIDRs rather than ASN values.

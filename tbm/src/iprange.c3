@@ -67,10 +67,10 @@ fn void? load_ipv4_rangelist(Allocator alloc, String filename, IpRangeList *rl) 
 
 alias IdxList = List {uint};
 
-fn uint IdxList.pick_winner(&self, IpRangeList *rl) {
-    uint prefixlen = cidr_from_iprange(rl.[self.[0]]).cidr;
-    uint winner = self.[0];
-    foreach (idx : self.array_view()[1 .. ]) {
+fn uint pick_winner(IdxList *idx_list, IpRangeList *rl) {
+    uint prefixlen = cidr_from_iprange(rl.[idx_list.[0]]).cidr;
+    uint winner = idx_list.[0];
+    foreach (idx : idx_list.array_view()[1 .. ]) {
         Cidr c = cidr_from_iprange(rl.[idx]);
         if (c.cidr > prefixlen) {
             winner = idx;
@@ -173,7 +173,7 @@ fn SegList? IpRangeList.build_segs(&self) {
             HeapItem top = h.first()!;
             if (curr_start <= top.end) {
                 //[start, curr_start], [curr_start + 1, ..]
-                uint winner = in_heap.pick_winner(self);
+                uint winner = pick_winner(&in_heap, self);
                 sg_list.push({.r = {start, curr_start - 1}, .idx = winner });
                 start = curr_start;
                 in_heap.push(idx);
@@ -184,7 +184,7 @@ fn SegList? IpRangeList.build_segs(&self) {
                 while (h.len() > 0 && curr_start > h.first()!.end) {
                     top = h.first()!;
                     if (top.end >= start) {
-                        uint winner = in_heap.pick_winner(self);
+                        uint winner = pick_winner(&in_heap, self);
                         sg_list.push({.r = {start, top.end}, .idx = winner });
                         start = top.end + 1;
                     }
@@ -201,7 +201,7 @@ fn SegList? IpRangeList.build_segs(&self) {
     while (h.len() > 0) {
         top = h.first()!;
         if (top.end >= start) {
-            uint winner = in_heap.pick_winner(self);
+            uint winner = pick_winner(&in_heap, self);
             sg_list.push({.r = {start, top.end}, .idx = winner });
             start = top.end + 1;
         }

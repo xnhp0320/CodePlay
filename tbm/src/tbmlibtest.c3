@@ -21,6 +21,11 @@ alias FibSegList = iprange::SegList {uint};
 alias FibTbm = Tbm {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibAlloc = TempTbmAllocator {FIB_TBM_STRIDE, uint, FibCidr};
 alias FibBenchAlloc = TrivalAllocator {FIB_TBM_STRIDE, uint, FibCidr};
+alias FibCidr6 = cidr::Cidr {uint128};
+alias FibIpRangeList6 = iprange::IpRangeList {uint128};
+alias FibSegList6 = iprange::SegList {uint128};
+alias FibTbm6 = Tbm {FIB_TBM_STRIDE, uint128, uint};
+alias FibAlloc6 = TempTbmAllocator {FIB_TBM_STRIDE, uint128, uint};
 List{uint} fib_bench_ips;
 FibTbm fib_bench_tbm;
 FibBenchAlloc fib_bench_alloc;
@@ -624,6 +629,79 @@ fn void? load_ipv4_fib_ips(Allocator alloc, String filename, List{uint} *ips) {
     }
 }
 
+fn void? load_ipv6_fib_tbm(Allocator alloc, String filename, FibTbm6 *tbm) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    uint route_idx = 0;
+    InetAddress addr;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                addr = net::ipv6_from_str(line)!;
+            } else {
+                uint prefixlen = line.to_uint()!;
+                FibCidr6 c;
+                c.from(&addr, prefixlen);
+                tbm.insert(c, route_idx)!!;
+                route_idx++;
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
+fn void? load_ipv6_fib_rangelist(Allocator alloc, String filename, FibIpRangeList6 *rl) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    InetAddress addr;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                addr = net::ipv6_from_str(line)!;
+            } else {
+                uint prefixlen = line.to_uint()!;
+                FibCidr6 c;
+                c.from(&addr, prefixlen);
+                rl.push(iprange::iprange_from_cidr{uint128}(c));
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
+fn void? assert_ipv6_fib_lookup_matches(Allocator alloc, String filename, FibSegList6 *seg_list, FibIpRangeList6 *rl, FibTbm6 *tbm) {
+    File f = file::open(filename, "r")!;
+    defer (void)f.close();
+    usz idx = 0;
+    uint128 ip;
+
+    while (1) {
+        if (try String line = io::readline(alloc, &f)) {
+            if (idx % 2 == 0) {
+                ip = net::ipv6_from_str(line)!.ip6.val;
+            } else {
+                uint range_idx = seg_list.do_lpm(ip)!!;
+                FibCidr6 range_cidr = iprange::cidr_from_iprange{uint128}(rl.[range_idx]);
+                uint tbm_idx = tbm.lookup(ip)!!;
+                FibCidr6 tbm_cidr = iprange::cidr_from_iprange{uint128}(rl.[tbm_idx]);
+                assert(range_cidr.ip == tbm_cidr.ip);
+                assert(range_cidr.cidr == tbm_cidr.cidr);
+            }
+        } else {
+            break;
+        }
+        idx++;
+    }
+}
+
 fn void? ensure_ipv4_fib_benchmark_data() {
     if (fib_bench_ready) {
         return;
@@ -681,6 +759,26 @@ fn void test_ipv4_fib_lookup_consistency() @test {
 
         load_ipv4_fib_tbm(tmem, filename, &tbm)!!;
         assert_ipv4_fib_lookup_matches(tmem, filename, &seg_list, &rl, &tbm)!!;
+    };
+}
+
+fn void test_ipv6_fib_lookup_consistency() @test {
+    FibIpRangeList6 rl;
+    rl.init(mem);
+    defer rl.free();
+
+    FibAlloc6 alloc;
+    FibTbm6 tbm;
+    tbm.alloc = &alloc;
+
+    @pool() {
+        String filename = "ipv6_fib.txt";
+        load_ipv6_fib_rangelist(tmem, filename, &rl)!!;
+        FibSegList6 seg_list = rl.build_segs()!!;
+        defer seg_list.free();
+
+        load_ipv6_fib_tbm(tmem, filename, &tbm)!!;
+        assert_ipv6_fib_lookup_matches(tmem, filename, &seg_list, &rl, &tbm)!!;
     };
 }
 

@@ -516,7 +516,7 @@ fn void TbmNode.iterate(&self, Cidr* cidr, uint depth, Iterator f, void *aux) {
     @foreach_1bit(self.external; uint pos) {
         TbmNode *node = self.next_exl( { (StrideTypeInner) pos } );
         Cidr curr_cidr = *cidr;
-        curr_cidr.ip |= pos << (KeyType.sizeof * 8 - depth - STRIDE);
+        curr_cidr.ip |= ((KeyType)pos) << (KeyType.sizeof * 8 - depth - STRIDE);
         curr_cidr.cidr += STRIDE;
         node.iterate(&curr_cidr, depth + STRIDE, f, aux);
     };
